@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LearnMap AI 데모</title>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <h1>LearnMap AI 데모</h1>
+  <p id="configuration">서버 설정을 확인하는 중입니다.</p>
+  <form id="upload-form">
+    <fieldset id="upload-controls">
+      <legend>PDF 분석</legend>
+      <label>PDF 파일 <input id="pdf-file" type="file" accept=".pdf,application/pdf" required></label>
+      <label>개념 정리 방식
+        <select id="concept-mode">
+          <option value="detailed" selected>세부 항목 — 기존 방식</option>
+          <option value="conceptual">핵심 개념 — 원리·구조 중심</option>
+        </select>
+      </label>
+      <p>핵심 개념 모드는 세부 항목을 추가 AI 요청으로 묶어 정리합니다. 예: 웹 서버 구조, 요청·응답 흐름. 기존 세부 목록도 결과 JSON에 보존합니다.</p>
+      <button type="submit">개념·관계 분석</button>
+    </fieldset>
+  </form>
+  <p id="analysis-status" role="status">PDF를 선택하세요. 파일 크기는 최대 20 MiB입니다.</p>
+  <p id="operation-status" role="status"></p>
+  <p id="connection-status" role="status"></p>
+  <button id="reconnect" type="button" disabled>연결 / 진행 상태 다시 확인</button>
+  <p id="error" role="alert"></p>
+  <details>
+    <summary>진행 로그</summary>
+    <pre id="events">[]</pre>
+  </details>
+  <h2>분석 결과 JSON</h2>
+  <pre id="analysis-result">아직 결과가 없습니다.</pre>
+  <fieldset id="learning-controls" disabled>
+    <legend>개념별 실험</legend>
+    <label>개념 <select id="concept"></select></label>
+    <label>문제 유형
+      <select id="question-type">
+        <option value="SHORT_ANSWER">단답형</option>
+        <option value="ESSAY">서술형</option>
+        <option value="MULTIPLE_CHOICE">객관식</option>
+      </select>
+    </label>
+    <label>난이도
+      <select id="difficulty">
+        <option value="EASY">쉬움</option>
+        <option value="MEDIUM" selected>보통</option>
+        <option value="HARD">어려움</option>
+      </select>
+    </label>
+    <button id="generate-question" type="button">문제 생성</button>
+    <button id="recommend-path" type="button">학습 경로 추천</button>
+  </fieldset>
+  <h2>문제 JSON</h2>
+  <pre id="question-result">아직 문제가 없습니다.</pre>
+  <form id="answer-form">
+    <fieldset id="answer-controls" disabled>
+      <legend>답안 제출</legend>
+      <label id="written-answer">답안 <textarea id="answer" rows="5" cols="80" maxlength="8000"></textarea></label>
+      <label id="choice-answer" hidden>선택지 <select id="answer-option"></select></label>
+      <button type="submit">답안 평가</button>
+    </fieldset>
+  </form>
+  <h2>평가 JSON</h2>
+  <pre id="evaluation-result">아직 평가가 없습니다.</pre>
+  <h2>학습 경로 JSON</h2>
+  <pre id="path-result">아직 추천이 없습니다.</pre>
+  <p>분석과 풀이 기록은 서버 메모리에만 유지됩니다. 서버를 재시작하면 초기화됩니다.</p>
+</body>
+</html>

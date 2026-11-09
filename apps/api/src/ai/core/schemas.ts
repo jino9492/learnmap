@@ -1,11 +1,15 @@
 import type { Concept, Evaluation, Material, Question, Recommendation, Relation } from "./contracts.ts";
-import { choice, list, object, score, text } from "./schema.ts";
+import { choice, list, object, optional, score, text } from "./schema.ts";
 
 export const materialSchema = object<Material>({
   id: text, title: text,
   sources: list(object({ location: text, text }), 1, Infinity),
 });
-const conceptSchema = object<Concept>({ id: text, name: text, description: text, sourceLocation: text, evidence: text });
+const conceptSchema = object<Concept>({
+  id: text, name: text, description: text, sourceLocation: text, evidence: text,
+  memberConceptIds: optional(list(text, 1, Infinity)),
+  citations: optional(list(object({ sourceLocation: text, evidence: text }), 1, Infinity)),
+});
 export const conceptsSchema = object<{ concepts: Concept[] }>({
   concepts: list(conceptSchema, 0, 15),
 });
@@ -17,6 +21,16 @@ export function conceptGenerationSchema(evidenceIds: string[]) {
   });
 }
 export const conceptCollectionSchema = object<{ concepts: Concept[] }>({ concepts: list(conceptSchema, 1, Infinity) });
+export interface ConceptGroup {
+  name: string;
+  description: string;
+  memberIds: string[];
+}
+export function conceptOrganizationSchema(memberIds: string[]) {
+  return object<{ groups: ConceptGroup[] }>({
+    groups: list(object<ConceptGroup>({ name: text, description: text, memberIds: list(choice(...memberIds), 1, memberIds.length) }), 0, memberIds.length),
+  });
+}
 const relationSchema = object<Relation>({ source: text, target: text, type: choice("PARENT_CHILD", "PREREQUISITE", "RELATED"), reason: text });
 export function relationGenerationSchema(conceptIds: string[]) {
   return object<{ relations: Relation[] }>({

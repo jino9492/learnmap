@@ -12,7 +12,7 @@ export interface LlmClient {
 }
 
 export interface AnalysisProgress {
-  stage: "concepts" | "relations";
+  stage: "concepts" | "organization" | "relations";
   completed: number;
   total: number;
   detail?: string;
@@ -35,7 +35,16 @@ export interface Concept {
   description: string;
   sourceLocation: string;
   evidence: string;
+  memberConceptIds?: string[];
+  citations?: Citation[];
 }
+
+export interface Citation {
+  sourceLocation: string;
+  evidence: string;
+}
+
+export type ConceptMode = "detailed" | "conceptual";
 
 export interface Relation {
   source: string;

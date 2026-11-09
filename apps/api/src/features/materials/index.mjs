@@ -47,6 +47,14 @@ export async function loadMaterial(path, { extractPdfPages = defaultPdfExtractor
     throw new AiError("INPUT", "Could not read the input file.");
   } finally { await file?.close(); }
 
+  return loadMaterialBytes(path, bytes, { extractPdfPages });
+}
+
+export async function loadMaterialBytes(name, bytes, { extractPdfPages = defaultPdfExtractor } = {}) {
+  const extension = extname(name).toLowerCase();
+  if (![".pdf", ".txt", ".md", ".json"].includes(extension)) throw new AiError("INPUT", "Unsupported document type.");
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_BYTES) throw new AiError("INPUT", "Input must be a nonempty file no larger than 20 MiB.");
+
   if (extension === ".json") {
     let value;
     try { value = JSON.parse(bytes.toString("utf8")); }
@@ -69,7 +77,7 @@ export async function loadMaterial(path, { extractPdfPages = defaultPdfExtractor
 
   return validateMaterial({
     id: createHash("sha256").update(bytes).digest("hex"),
-    title: basename(path).slice(0, 12000),
+    title: basename(name).slice(0, 12000),
     sources: sourcesFromPages(pages),
   });
 }

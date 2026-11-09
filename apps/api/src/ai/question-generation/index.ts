@@ -3,12 +3,20 @@ import { ensure } from "../core/errors.ts";
 import { prompts } from "../core/prompts.ts";
 import { conceptsSchema, questionSchema } from "../core/schemas.ts";
 import { validateMaterial } from "../concept-extraction/index.ts";
+import { conceptCitations, conceptSummary } from "../../features/material-analysis/index.ts";
 
 export function questionContext(concept: Concept, input: Material) {
   const material = validateMaterial(input);
   conceptsSchema.parse({ concepts: [concept] });
   const source = material.sources.find((entry) => entry.location === concept.sourceLocation);
   ensure(source?.text.includes(concept.evidence), "Concept is not grounded in this material.", "INPUT");
+  if (concept.citations) {
+    const citations = conceptCitations(concept, material);
+    return { concept: conceptSummary(concept), source: { location: concept.sourceLocation, text: concept.evidence },
+      sources: citations.filter((citation) => citation.sourceLocation !== concept.sourceLocation || citation.evidence !== concept.evidence)
+        .map((citation) => ({ location: citation.sourceLocation, text: citation.evidence })),
+    };
+  }
   return { concept, source };
 }
 

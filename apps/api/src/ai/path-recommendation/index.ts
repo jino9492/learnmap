@@ -4,6 +4,7 @@ import { prompts } from "../core/prompts.ts";
 import { recommendationSchema, conceptCollectionSchema, relationCollectionSchema } from "../core/schemas.ts";
 import { list, object, score, text } from "../core/schema.ts";
 import { prerequisiteContext } from "../../features/knowledge-graph/index.ts";
+import { conceptSummary } from "../../features/material-analysis/index.ts";
 
 export interface Progress {
   conceptId: string;
@@ -16,7 +17,8 @@ const progressSchema = list(object<Progress>({ conceptId: text, scores: list(sco
 export async function recommendPath(client: LlmClient, graph: Graph, targetConceptId: string, inputProgress: unknown) {
   conceptCollectionSchema.parse({ concepts: graph.concepts });
   relationCollectionSchema.parse({ relations: graph.relations });
-  const context = prerequisiteContext(graph, targetConceptId);
+  const subgraph = prerequisiteContext(graph, targetConceptId);
+  const context = { concepts: subgraph.concepts.map(conceptSummary), relations: subgraph.relations };
   const ids = new Set(context.concepts.map((concept) => concept.id));
   const progress = progressSchema.parse(inputProgress);
   const seen = new Set<string>();

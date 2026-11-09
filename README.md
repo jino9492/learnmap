@@ -1,5 +1,13 @@
 # LearnMap
 
+## HTML 데모
+
+`npm run demo:web`를 실행하고 [로컬 데모](http://127.0.0.1:8787)에 접속합니다. 서버 터미널을 실행 상태로 유지한 채 PDF를 선택하면 개념·관계 분석, 문제 생성, 답안 평가와 학습 경로 결과를 JSON으로 확인할 수 있습니다.
+
+PDF 분석 전에 **개념 정리 방식**을 선택할 수 있습니다. 기본인 **세부 항목**은 기존 추출 방식을 유지합니다. **핵심 개념**은 세부 항목들을 원리·구조 중심의 학습 단위로 추가 정리하며, 기존 목록과 원문 근거도 JSON에 보존합니다. 추가 AI 요청이 발생합니다. CLI에서는 `npm run ai -- "강의자료.pdf" --concept-mode conceptual`로 선택합니다.
+
+진행 상태 조회가 일시적으로 끊기면 자동 재연결하며 PDF를 자동으로 다시 제출하지 않습니다. 같은 탭에서 새로고침하면 저장된 분석 ID로 조회를 재개합니다. 서버 자체를 재시작하면 메모리의 분석 데이터가 사라지므로 PDF를 다시 올려야 합니다.
+
 ## AI 실험 MVP 실행
 
 Node.js 24 이상에서 `npm install` 후 `npm run demo`로 오프라인 흐름을 확인하고 `npm test`로 검증할 수 있습니다. 실제 AI 호출은 `.env.example`의 설정을 `.env`에 입력한 뒤 `npm run ai -- examples/lecture.pdf`로 실행합니다. PDF·TXT·Markdown 원본 파일을 직접 읽으며, JSON 입력은 내부 형식 검증용으로 유지합니다. `AI_PROVIDER=openai`, `gemini`, `ollama` 중 하나로 공급자를 선택합니다. 스캔 PDF의 OCR과 PPT/PPTX 추출은 아직 지원하지 않습니다.

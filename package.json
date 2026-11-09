@@ -8,6 +8,7 @@
   "scripts": {
     "ai": "node --env-file-if-exists=.env apps/api/src/cli.mjs",
     "demo": "node apps/api/src/cli.mjs --demo",
+    "demo:web": "node --env-file-if-exists=.env apps/api/src/demo-server.mjs",
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {

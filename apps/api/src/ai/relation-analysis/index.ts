@@ -3,17 +3,15 @@ import { validateGraph } from "../../features/knowledge-graph/index.ts";
 import { validateMaterial } from "../concept-extraction/index.ts";
 import { conceptCollectionSchema, relationGenerationSchema } from "../core/schemas.ts";
 import { prompts } from "../core/prompts.ts";
-import { conceptWindows, relationKey } from "../../features/material-analysis/index.ts";
-import { AiError, ensure } from "../core/errors.ts";
+import { conceptCitations, conceptSummary, conceptWindows, relationKey } from "../../features/material-analysis/index.ts";
+import { AiError } from "../core/errors.ts";
 
 export async function analyzeRelations(client: LlmClient, input: unknown, concepts: Concept[], onProgress?: (progress: AnalysisProgress) => void) {
   const material = validateMaterial(input);
   conceptCollectionSchema.parse({ concepts });
   validateGraph({ concepts, relations: [] });
-  for (const concept of concepts) {
-    ensure(material.sources.some((source) => source.location === concept.sourceLocation && source.text.includes(concept.evidence)), "Concept is not grounded in this material.", "INPUT");
-  }
-  const windows = conceptWindows(concepts);
+  for (const concept of concepts) conceptCitations(concept, material);
+  const windows = conceptWindows(concepts.map(conceptSummary));
   const relations = new Map<string, Relation>();
   onProgress?.({ stage: "relations", completed: 0, total: windows.length });
   for (const [index, window] of windows.entries()) {

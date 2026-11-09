@@ -3,6 +3,11 @@ import { AiError } from "./errors.ts";
 export interface Schema<T> {
   json: Record<string, unknown>;
   parse(value: unknown): T;
+  isOptional?: boolean;
+}
+
+export function optional<T>(schema: Schema<T>): Schema<T | undefined> {
+  return { json: schema.json, isOptional: true, parse: (value) => value === undefined ? undefined : schema.parse(value) };
 }
 
 function invalid(): never {
@@ -46,11 +51,12 @@ export function list<T>(item: Schema<T>, min = 0, max = 100): Schema<T[]> {
 }
 
 export function object<T>(fields: { [K in keyof T]: Schema<T[K]> }): Schema<T> {
+  const entries = Object.entries<Schema<unknown> | undefined>(fields).filter((entry): entry is [string, Schema<unknown>] => entry[1] !== undefined);
   return {
     json: {
       type: "object",
-      properties: Object.fromEntries(Object.entries<Schema<unknown>>(fields).map(([key, schema]) => [key, schema.json])),
-      required: Object.keys(fields), additionalProperties: false,
+      properties: Object.fromEntries(entries.map(([key, schema]) => [key, schema.json])),
+      required: entries.filter(([, schema]) => !schema.isOptional).map(([key]) => key), additionalProperties: false,
     },
     parse(value) {
       if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid();
@@ -58,7 +64,10 @@ export function object<T>(fields: { [K in keyof T]: Schema<T[K]> }): Schema<T> {
       // Each field is validated before constructing the typed result.
       const result = {} as T;
       for (const key in fields) {
-        result[key] = fields[key].parse(Reflect.get(value, key));
+        const schema = fields[key];
+        if (!schema) continue;
+        const parsed = schema.parse(Reflect.get(value, key));
+        if (parsed !== undefined) result[key] = parsed;
       }
       return result;
     },

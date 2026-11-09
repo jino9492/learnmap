@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
-import { createConfiguredClient, extractConcepts, analyzeRelations, generateQuestion, publicQuestion, evaluateAnswer, recommendPath, validateMaterial, AiError } from "./ai/index.ts";
+import { createConfiguredClient, extractConcepts, organizeConcepts, analyzeRelations, generateQuestion, publicQuestion, evaluateAnswer, recommendPath, validateMaterial, AiError } from "./ai/index.ts";
 import { loadMaterial } from "./features/materials/index.mjs";
 
 async function readJson(path) {
@@ -12,9 +12,16 @@ async function readJson(path) {
 async function main() {
   const args = process.argv.slice(2);
   const isDemo = args.length === 1 && args[0] === "--demo";
-  const extractOnly = args.length === 2 && args[1] === "--extract-only";
-  if (!isDemo && ((args.length !== 1 && !extractOnly) || args[0].startsWith("--"))) {
-    throw new AiError("INPUT", "Usage: npm run ai -- <document> [--extract-only] | npm run demo");
+  let extractOnly = false;
+  let mode = "detailed";
+  if (!isDemo) {
+    if (!args[0] || args[0].startsWith("--")) throw new AiError("INPUT", "Usage: npm run ai -- <document> [--concept-mode detailed|conceptual] [--extract-only]");
+    for (let index = 1; index < args.length; index++) {
+      if (args[index] === "--extract-only") extractOnly = true;
+      else if (args[index] === "--concept-mode") mode = args[++index];
+      else throw new AiError("INPUT", "Unknown CLI option.");
+    }
+    if (!["detailed", "conceptual"].includes(mode)) throw new AiError("INPUT", "Concept mode must be detailed or conceptual.");
   }
   const material = isDemo
     ? validateMaterial(await readJson(new URL("../../../examples/material.json", import.meta.url)))
@@ -47,10 +54,11 @@ async function main() {
   stderr.write("Extracting concepts...\n");
   const reportProgress = ({ stage, completed, total, detail }) => stderr.write(`${stage}: ${completed}/${total} batches${detail ? ` (${detail})` : ""}\n`);
   const batchValue = process.env.AI_BATCH_CHARACTERS?.trim();
-  const concepts = await extractConcepts(client, material, reportProgress, { batchCharacters: batchValue ? Number(batchValue) : undefined });
+  const detailedConcepts = await extractConcepts(client, material, reportProgress, { batchCharacters: batchValue ? Number(batchValue) : undefined });
+  const concepts = mode === "conceptual" ? await organizeConcepts(client, material, detailedConcepts, reportProgress) : detailedConcepts;
   stderr.write("Analyzing relations...\n");
   const relations = await analyzeRelations(client, material, concepts, reportProgress);
-  stdout.write(`${JSON.stringify({ concepts, relations }, null, 2)}\n`);
+  stdout.write(`${JSON.stringify({ mode, concepts, relations, ...(mode === "conceptual" ? { detailedConcepts } : {}) }, null, 2)}\n`);
   const terminal = createInterface({ input: stdin, output: stdout });
   try {
     const conceptId = isDemo ? "c3" : (await terminal.question("Concept ID to practice: ")).trim();
