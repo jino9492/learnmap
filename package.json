@@ -1,0 +1,16 @@
+{
+  "name": "learnmap-ai-experiment",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "ai": "node --env-file-if-exists=.env apps/api/src/cli.mjs",
+    "demo": "node apps/api/src/cli.mjs --demo",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^6.5.438"
+  }
+}

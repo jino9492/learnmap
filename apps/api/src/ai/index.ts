@@ -1,0 +1,12 @@
+export { createOpenAiClient } from "./core/client.ts";
+export { createGeminiClient } from "./core/gemini-client.ts";
+export { createOllamaClient } from "./core/ollama-client.ts";
+export { createConfiguredClient } from "./core/config.ts";
+export { AiError } from "./core/errors.ts";
+export type { LlmClient, Material, Concept, Graph, Question, Evaluation, Recommendation, AnalysisProgress } from "./core/contracts.ts";
+export { extractConcepts, validateMaterial } from "./concept-extraction/index.ts";
+export type { ConceptExtractionOptions } from "./concept-extraction/index.ts";
+export { analyzeRelations } from "./relation-analysis/index.ts";
+export { generateQuestion, publicQuestion } from "./question-generation/index.ts";
+export { evaluateAnswer } from "./answer-evaluation/index.ts";
+export { recommendPath } from "./path-recommendation/index.ts";

@@ -1,5 +1,17 @@
 # LearnMap
 
+## AI 실험 MVP 실행
+
+Node.js 24 이상에서 `npm install` 후 `npm run demo`로 오프라인 흐름을 확인하고 `npm test`로 검증할 수 있습니다. 실제 AI 호출은 `.env.example`의 설정을 `.env`에 입력한 뒤 `npm run ai -- examples/lecture.pdf`로 실행합니다. PDF·TXT·Markdown 원본 파일을 직접 읽으며, JSON 입력은 내부 형식 검증용으로 유지합니다. `AI_PROVIDER=openai`, `gemini`, `ollama` 중 하나로 공급자를 선택합니다. 스캔 PDF의 OCR과 PPT/PPTX 추출은 아직 지원하지 않습니다.
+
+```powershell
+npm run ai -- "강의자료.pdf"
+# Check extracted text and page locations without calling an AI provider:
+npm run ai -- examples/lecture.pdf --extract-only
+```
+
+구현 범위, 입력 형식, 공개 모듈 API와 검증 한계는 [AI 실험 가이드](docs/ai-experiment.md)에 정리했습니다.
+
 **생성형 AI 기반 개인화 학습 지식 그래프 시스템**
 
 LearnMap은 PDF, PPT, 강의노트 등 다양한 학습 자료를 분석하여 핵심 개념과 개념 간 관계를 지식 그래프(Knowledge Graph) 형태로 시각화하고, 사용자의 학습 기록과 이해도를 바탕으로 개인화된 학습 경로를 제공하는 AI 기반 학습 지원 서비스입니다.

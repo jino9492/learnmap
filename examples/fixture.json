@@ -1,0 +1,35 @@
+{
+  "concept_extraction": {
+    "concepts": [
+      { "id": "c1", "name": "Paging", "description": "Division of virtual memory into fixed-size pages.", "sourceLocation": "page:1", "evidence": "Paging divides virtual address space into fixed-size pages." },
+      { "id": "c2", "name": "Page table", "description": "Maps virtual pages to physical frames.", "sourceLocation": "page:1", "evidence": "A page table maps virtual pages to physical frames." },
+      { "id": "c3", "name": "Page fault", "description": "Occurs when a requested page is absent from physical memory.", "sourceLocation": "page:1", "evidence": "A page fault occurs when a requested page is not currently present in physical memory." }
+    ]
+  },
+  "relation_analysis": {
+    "relations": [
+      { "source": "c1", "target": "c2", "type": "PREREQUISITE", "reason": "Page-table mappings require understanding pages." },
+      { "source": "c2", "target": "c3", "type": "PREREQUISITE", "reason": "The present bit helps identify an absent page." }
+    ]
+  },
+  "question_generation": {
+    "type": "SHORT_ANSWER",
+    "question": "When does a page fault occur?",
+    "options": [],
+    "referenceAnswer": "When a requested page is not present in physical memory.",
+    "evaluationCriteria": ["States that a requested page is absent from physical memory."]
+  },
+  "answer_evaluation": {
+    "score": 100,
+    "feedback": "The answer correctly identifies the missing page in physical memory.",
+    "weakPoints": []
+  },
+  "path_recommendation": {
+    "steps": [
+      { "conceptId": "c1", "reason": "Review the unit of virtual memory." },
+      { "conceptId": "c2", "reason": "Review mapping and the present bit." },
+      { "conceptId": "c3", "reason": "Apply the prerequisites to the target; even a correct answer benefits from connecting the concepts." }
+    ],
+    "possibleCause": "Uncertainty about page presence may indicate a need to review page-table entries."
+  }
+}

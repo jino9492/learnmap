@@ -1,0 +1,10 @@
+{
+  "id": "os-memory",
+  "title": "Virtual memory fundamentals",
+  "sources": [
+    {
+      "location": "page:1",
+      "text": "Paging divides virtual address space into fixed-size pages. A page table maps virtual pages to physical frames. Understanding the page table requires knowing how paging divides memory. A page fault occurs when a requested page is not currently present in physical memory. Understanding a page fault requires understanding the page table's present bit."
+    }
+  ]
+}
