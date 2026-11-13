@@ -659,8 +659,42 @@ main{
   padding:28px 30px
 }
 .concept-detail{
-  min-height:734px;
-  align-self:start
+  height:calc(100dvh - 116px);
+  min-height:0;
+  min-width:0;
+  align-self:start;
+  overflow-y:auto;
+  overscroll-behavior-y:contain;
+  scrollbar-gutter:stable;
+  scrollbar-width:thin;
+  scrollbar-color:#e5e7eb transparent
+}
+.concept-detail:hover,.concept-detail:focus-within{
+  scrollbar-color:#cbd5e1 transparent
+}
+.concept-detail::-webkit-scrollbar{
+  width:6px
+}
+.concept-detail::-webkit-scrollbar-button{
+  display:none;
+  width:0;
+  height:0
+}
+.concept-detail::-webkit-scrollbar-track{
+  background:transparent
+}
+.concept-detail::-webkit-scrollbar-thumb{
+  background:#e5e7eb;
+  border-radius:999px
+}
+.concept-detail:hover::-webkit-scrollbar-thumb,.concept-detail:focus-within::-webkit-scrollbar-thumb{
+  background:#cbd5e1
+}
+@supports selector(::-webkit-scrollbar){
+  .concept-detail,.concept-detail:hover,.concept-detail:focus-within{
+    scrollbar-width:auto;
+    scrollbar-color:auto
+  }
 }
 .concept-detail>.pill{
   margin-top:12px
@@ -1235,9 +1269,10 @@ dialog label+label{
     grid-template-columns:1fr
   }
   .concept-detail{
-    min-height:0;
+    height:min(734px,80dvh);
     display:grid;
     grid-template-columns:1fr 1fr;
+    align-content:start;
     gap:16px
   }
   .concept-detail>.detail-section{
