@@ -12,7 +12,12 @@
   --amber:#9a6a17;
   --amber-bg:#fff8e6;
   --red:#b33c46;
-  --red-bg:#fef0f1
+  --red-bg:#fef0f1;
+  --edge-parent:#2563eb;
+  --edge-child:#c2410c;
+  --edge-prerequisite:#7c3aed;
+  --edge-dependent:#0f766e;
+  --edge-related:#475569
 }
 *{
   box-sizing:border-box
@@ -523,7 +528,35 @@ main{
   stroke-width:3
 }
 .edge-arrow{
-  fill:#a4b5cf
+  fill:#d1dbe8
+}
+.edge-arrow.recommended{
+  fill:var(--blue)
+}
+.graph-edge[data-focus="muted"]{
+  opacity:.22
+}
+.graph-edge[data-focus]:not([data-focus=""]):not([data-focus="muted"]){
+  stroke-width:3.5;
+  stroke:var(--edge-color)
+}
+.graph-edge[data-focus="parent"],.edge-arrow.parent,.edge-key.parent{
+  --edge-color:var(--edge-parent)
+}
+.graph-edge[data-focus="child"],.edge-arrow.child,.edge-key.child{
+  --edge-color:var(--edge-child)
+}
+.graph-edge[data-focus="prerequisite"],.edge-arrow.prerequisite,.edge-key.prerequisite{
+  --edge-color:var(--edge-prerequisite)
+}
+.graph-edge[data-focus="dependent"],.edge-arrow.dependent,.edge-key.dependent{
+  --edge-color:var(--edge-dependent)
+}
+.graph-edge[data-focus="related"],.edge-arrow.related,.edge-key.related{
+  --edge-color:var(--edge-related)
+}
+.edge-arrow:not(.default):not(.recommended){
+  fill:var(--edge-color)
 }
 .graph-controls{
   position:absolute;
@@ -603,6 +636,21 @@ main{
   color:#9ca3af;
   font-size:10px;
   margin:12px 0
+}
+.graph-legend .edge-key{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  color:#475569;
+  font-size:11px
+}
+.edge-key::before{
+  content:"";
+  width:20px;
+  border-top:3px solid var(--edge-color)
+}
+.edge-key.related::before{
+  border-top-style:dashed
 }
 .panel{
   background:white;

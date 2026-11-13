@@ -11,25 +11,67 @@ export function layoutGraph(concepts, relations) {
   const roots = concepts.filter((concept) => incoming.get(concept.id) === 0);
   const queue = roots.map((concept) => concept.id);
   const levels = new Map(queue.map((id) => [id, 1]));
-  for (let index = 0; index < queue.length; index++) {
-    const id = queue[index];
-    for (const child of children.get(id)) {
-      levels.set(child, Math.max(levels.get(child) ?? 1, levels.get(id) + 1));
-      incoming.set(child, incoming.get(child) - 1);
-      if (incoming.get(child) === 0) queue.push(child);
+  const branches = new Map(concepts.map((concept) => [concept.id, []]));
+  let cursor = 0;
+  // A spanning forest gives shared descendants one position and handles cycles safely.
+  for (const concept of [...roots, ...concepts]) {
+    if (cursor === queue.length && !levels.has(concept.id)) {
+      roots.push(concept);
+      queue.push(concept.id);
+      levels.set(concept.id, 1);
+    }
+    while (cursor < queue.length) {
+      const id = queue[cursor++];
+      for (const child of children.get(id)) {
+        if (levels.has(child)) continue;
+        levels.set(child, levels.get(id) + 1);
+        branches.get(id).push(child);
+        queue.push(child);
+      }
     }
   }
-  const layers = new Map();
-  for (const concept of concepts) {
-    const level = levels.get(concept.id) ?? 1;
-    if (!layers.has(level)) layers.set(level, []);
-    layers.get(level).push(concept);
+  const weights = new Map();
+  for (const id of [...queue].reverse()) weights.set(id, Math.max(1, branches.get(id).reduce((sum, child) => sum + weights.get(child), 0)));
+  const sectors = new Map();
+  function divideSector(ids, start, span) {
+    const total = ids.reduce((sum, id) => sum + weights.get(id), 0);
+    for (const id of ids) {
+      const portion = span * weights.get(id) / total;
+      sectors.set(id, { start, span: portion, angle: start + portion / 2 });
+      start += portion;
+    }
   }
-  const width = Math.max(846, ...[...layers.values()].map((layer) => layer.length * 190 + 100));
-  const height = Math.max(646, (Math.max(0, ...layers.keys()) + 1) * 125 + 70);
+  divideSector(roots.map((concept) => concept.id), -Math.PI, 2 * Math.PI);
+  const layers = new Map();
+  for (const id of queue) {
+    const sector = sectors.get(id);
+    divideSector(branches.get(id), sector.start, sector.span);
+    const level = levels.get(id);
+    if (!layers.has(level)) layers.set(level, []);
+    layers.get(level).push(id);
+  }
   const positions = new Map();
-  for (const [level, layer] of layers) for (const [index, concept] of layer.entries()) positions.set(concept.id, { x: width / 2 + (index - (layer.length - 1) / 2) * 190, y: 115 + level * 125 });
-  return { positions, roots, width, height };
+  const nodeSpacing = 210;
+  const ringSpacing = 240;
+  let radius = 0;
+  for (const layer of layers.values()) {
+    radius += ringSpacing;
+    const angles = layer.map((id) => sectors.get(id).angle).sort((a, b) => a - b);
+    // Keep rectangular cards apart even in crowded or unevenly sized branches.
+    if (angles.length > 1) {
+      const gaps = angles.map((angle, index) => index ? angle - angles[index - 1] : angle + 2 * Math.PI - angles.at(-1));
+      radius = Math.max(radius, nodeSpacing / (2 * Math.sin(Math.min(...gaps) / 2)));
+    }
+    for (const id of layer) {
+      const angle = sectors.get(id).angle;
+      positions.set(id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
+    }
+  }
+  const width = Math.max(846, ...[...positions.values()].map(({ x }) => 2 * (Math.abs(x) + 150)));
+  const height = Math.max(646, ...[...positions.values()].map(({ y }) => 2 * (Math.abs(y) + 100)));
+  const center = { x: width / 2, y: height / 2 };
+  for (const position of positions.values()) { position.x += center.x; position.y += center.y; }
+  return { positions, roots, width, height, center };
 }
 
 function svgElement(tag, attrs, value) {
@@ -62,6 +104,8 @@ export function createGraph(svg, onSelect) {
   let positions = new Map();
   const nodeElements = new Map();
   const connectedEdges = new Map();
+  const edges = [];
+  let edgeLayer;
   let layoutSize = { width: 846, height: 646 };
   const rootId = "__subject__";
   let drag;
@@ -154,6 +198,31 @@ export function createGraph(svg, onSelect) {
       applyViewport();
     }
   });
+  function updateSelection(selectedId) {
+    const hasSelection = nodeElements.has(selectedId);
+    for (const [id, group] of nodeElements) {
+      if (id === rootId) continue;
+      const active = id === selectedId;
+      group.classList.toggle("selected", active);
+      group.setAttribute("aria-pressed", String(active));
+    }
+    const highlighted = [];
+    for (const edge of edges) {
+      const incoming = edge.target === selectedId;
+      const outgoing = edge.source === selectedId;
+      let focus = "";
+      if (hasSelection && (incoming || outgoing)) {
+        if (edge.type === "PARENT_CHILD") focus = incoming ? "parent" : "child";
+        else if (edge.type === "PREREQUISITE") focus = incoming ? "prerequisite" : "dependent";
+        else focus = "related";
+        highlighted.push(edge.element);
+      }
+      edge.element.setAttribute("data-focus", focus || (hasSelection ? "muted" : ""));
+      if (edge.type !== "RELATED") edge.element.setAttribute("marker-end", `url(#arrow-${focus || (edge.recommended ? "recommended" : "default")})`);
+    }
+    // Draw focused connections last within the edge layer, keeping nodes above them.
+    for (const element of highlighted) edgeLayer.append(element);
+  }
   function render({ name, graphId = name, concepts, relations, progress, selectedId, path, query, filter }) {
     const progressById = new Map(progress.map((item) => [item.conceptId, item]));
     const visible = concepts.filter((concept) => (!query || `${concept.name} ${concept.description}`.toLowerCase().includes(query.toLowerCase())) && (filter === "ALL" || (progressById.get(concept.id)?.status ?? "NOT_STARTED") === filter));
@@ -164,31 +233,32 @@ export function createGraph(svg, onSelect) {
     positions = arrangements.get(graphId);
     const validIds = new Set([rootId, ...concepts.map((concept) => concept.id)]);
     for (const id of positions.keys()) if (!validIds.has(id)) positions.delete(id);
-    if (!positions.has(rootId)) positions.set(rootId, { x: layout.width / 2, y: 115, width: 182, height: 56 });
+    if (!positions.has(rootId)) positions.set(rootId, { ...layout.center, width: 182, height: 56 });
     for (const [id, position] of layout.positions) if (!positions.has(id)) positions.set(id, { ...position, width: 166, height: 76 });
     const pathIds = path?.steps.map((step) => step.conceptId) ?? [];
     const nextDataSignature = JSON.stringify([graphId, name, visible, relations, progress, pathIds]);
     if (nextDataSignature === dataSignature) {
-      for (const group of world.querySelectorAll("[data-concept]")) {
-        const active = group.dataset.concept === selectedId;
-        group.classList.toggle("selected", active);
-        group.setAttribute("aria-pressed", String(active));
-      }
+      updateSelection(selectedId);
       return visible.length;
     }
     dataSignature = nextDataSignature;
     world.replaceChildren();
     nodeElements.clear(); connectedEdges.clear();
+    edges.length = 0;
     const defs = svgElement("defs", {});
-    const marker = svgElement("marker", { id: "arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" });
-    marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", class: "edge-arrow" }));
-    defs.append(marker); world.append(defs);
+    for (const kind of ["default", "recommended", "parent", "child", "prerequisite", "dependent", "related"]) {
+      const marker = svgElement("marker", { id: `arrow-${kind}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" });
+      marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", class: `edge-arrow ${kind}` }));
+      defs.append(marker);
+    }
+    edgeLayer = svgElement("g", { class: "graph-edges" });
+    world.append(defs, edgeLayer);
     function edge(source, target, type, recommended = false) {
       const line = svgElement("path", { d: edgeGeometry(positions.get(source), positions.get(target)).d, class: `graph-edge ${type}${recommended ? " recommended" : ""}`, "data-source": source, "data-target": target });
-      if (type === "PREREQUISITE") line.setAttribute("marker-end", "url(#arrow)");
-      const connection = { element: line, source, target };
+      const connection = { element: line, source, target, type, recommended };
+      edges.push(connection);
       for (const id of [source, target]) { if (!connectedEdges.has(id)) connectedEdges.set(id, new Set()); connectedEdges.get(id).add(connection); }
-      world.append(line);
+      edgeLayer.append(line);
     }
     for (const root of layout.roots) if (visibleIds.has(root.id)) edge(rootId, root.id, "PARENT_CHILD");
     for (const relation of relations) if (visibleIds.has(relation.source) && visibleIds.has(relation.target)) {
@@ -211,6 +281,7 @@ export function createGraph(svg, onSelect) {
       group.append(svgElement("text", { y: -7 }, title), svgElement("rect", { x: -38, y: 6, width: 76, height: 24, rx: 12, class: "node-badge" }), svgElement("text", { y: 22, class: "node-status" }, statusLabels[status]));
       world.append(group);
     }
+    updateSelection(selectedId);
     const nextSignature = JSON.stringify([graphId, visible.map((concept) => concept.id)]);
     updateBounds();
     if (signature !== nextSignature) { signature = nextSignature; fit(); }

@@ -104,6 +104,8 @@ Never copy the whole rubric, list mastery levels, invent relations, or infer unr
 A full-credit answer has an empty weakPoints array.`,
   path: `${safety}
 Task: Recommend a learning sequence from the supplied prerequisite subgraph, ending at targetConceptId.
+Copy concept IDs EXACTLY as supplied, including all prefixes, colons and UUIDs. Never use names, shortened IDs
+or newly assigned IDs. A graph with one concept requires exactly one step with that concept's full ID.
 Include ALL supplied concepts exactly once with prerequisites before dependents. Explain why each is included,
 especially concepts with a score of 80 or more. Use progress and recent mistakes to explain a possibleCause,
 clearly expressed as a possibility rather than a diagnosis.`,

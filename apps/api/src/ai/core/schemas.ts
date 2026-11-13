@@ -52,3 +52,10 @@ export function evaluationGenerationSchema(conceptIds: string[]) {
 export const recommendationSchema = object<Recommendation>({
   steps: list(object({ conceptId: text, reason: text }), 1, Infinity), possibleCause: text,
 });
+
+export function recommendationGenerationSchema(conceptIds: string[]) {
+  return object<Recommendation>({
+    steps: list(object({ conceptId: choice(...conceptIds), reason: text }), conceptIds.length, conceptIds.length),
+    possibleCause: text,
+  });
+}

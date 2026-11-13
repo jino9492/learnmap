@@ -96,8 +96,9 @@ test("mastery uses the last five scores and graph layout preserves every concept
   const concepts = fixture.concept_extraction.concepts;
   const layout = layoutGraph(concepts, fixture.relation_analysis.relations);
   assert.equal(layout.positions.size, concepts.length);
-  assert.ok(layout.positions.get("c1").y < layout.positions.get("c2").y);
-  assert.ok(layout.positions.get("c2").y < layout.positions.get("c3").y);
+  const distance = (id) => Math.hypot(layout.positions.get(id).x - layout.center.x, layout.positions.get(id).y - layout.center.y);
+  assert.ok(distance("c1") < distance("c2"));
+  assert.ok(distance("c2") < distance("c3"));
 });
 
 test("failed grading preserves the answer without changing mastery; failed reanalysis preserves the successful graph", async () => {
