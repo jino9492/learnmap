@@ -16,6 +16,7 @@ export interface AnalysisProgress {
   completed: number;
   total: number;
   detail?: string;
+  warning?: boolean;
 }
 
 export interface Source {

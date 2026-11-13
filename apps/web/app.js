@@ -1,4 +1,4 @@
-import { createApiClient, createAnalysisPoller } from "/api.js";
+import { createApiClient, createAnalysisPoller, apiErrorMessage } from "/api.js";
 import { createGraph, statusLabels, statusColors } from "/graph.js";
 
 const $ = (id) => document.getElementById(id);
@@ -27,8 +27,7 @@ function remember(id) { try { localStorage.setItem("learnmap.subjectId", id); } 
 function remembered() { try { return localStorage.getItem("learnmap.subjectId"); } catch { return null; } }
 function clearError() { $("error").hidden = true; document.querySelectorAll(".dialog-error").forEach((item) => item.remove()); }
 function reportError(error) {
-  const messages = { CONFIG: "AI 연결 설정을 확인해 주세요. 서버의 .env에 공급자와 모델을 설정한 뒤 다시 시도할 수 있습니다.", TIMEOUT: "AI 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.", INTERNAL: "요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.", INPUT: "자료 또는 입력 내용을 확인해 주세요. PDF는 텍스트를 포함해야 하며 파일은 20 MiB 이하여야 합니다.", DEMO_CONNECTION: "서버에 연결할 수 없습니다. 연결을 확인한 뒤 다시 시도해 주세요." };
-  const message = messages[error.code] ?? (/^[\x00-\x7F]*$/.test(error.message ?? "") ? "요청을 완료하지 못했습니다. 서버 연결과 AI 설정을 확인해 주세요." : error.message);
+  const message = apiErrorMessage(error);
   $("error").replaceChildren(node("span", {}, message), button("닫기", "compact", clearError));
   $("error").hidden = false;
   const dialog = document.querySelector("dialog[open]");
@@ -91,7 +90,7 @@ function renderSubjects() {
   $("subject-pill").textContent = state.subject?.name ?? "학습 공간";
   controls();
 }
-const materialStatus = { queued: "분석 대기", extracting_text: "텍스트 추출 중", extracting_concepts: "개념 추출 중", organizing_concepts: "개념 정리 중", analyzing_relations: "관계 분석 중", localizing: "한국어 정리 중", failed: "분석 실패 · 다시 분석할 수 있습니다", ready: "분석 완료" };
+const materialStatus = { queued: "분석 대기", extracting_text: "텍스트 추출 중", extracting_concepts: "개념 추출 중", organizing_concepts: "개념 정리 중", analyzing_relations: "관계 분석 중", localizing: "한국어 정리 중", saving: "분석 저장 중", failed: "분석 실패 · 다시 분석할 수 있습니다", ready: "분석 완료" };
 function renderMaterials() {
   const materials = state.subject?.materials ?? [];
   $("toggle-materials").textContent = `자료 관리 · ${materials.length}개`;
@@ -203,7 +202,7 @@ for (const name of ["dragenter", "dragover"]) $("drop-zone").addEventListener(na
 for (const name of ["dragleave", "drop"]) $("drop-zone").addEventListener(name, (event) => { event.preventDefault(); $("drop-zone").classList.remove("dragging"); });
 $("drop-zone").addEventListener("drop", (event) => { if (event.dataTransfer.files.length) { $("material-file").files = event.dataTransfer.files; $("file-name").textContent = event.dataTransfer.files[0].name; } });
 
-const stages = ["queued", "extracting_text", "extracting_concepts", "organizing_concepts", "analyzing_relations", "localizing", "ready"];
+const stages = ["queued", "extracting_text", "extracting_concepts", "organizing_concepts", "analyzing_relations", "localizing", "saving", "ready"];
 const poller = createAnalysisPoller({ request, shouldContinue: (snapshot) => !["ready", "failed"].includes(snapshot.status),
   onState(snapshot) {
     $("analysis-status").textContent = materialStatus[snapshot.status] ?? "분석 중";
@@ -211,7 +210,7 @@ const poller = createAnalysisPoller({ request, shouldContinue: (snapshot) => !["
     if (["ready", "failed"].includes(snapshot.status)) {
       state.analysisId = null; $("analysis-banner").hidden = true; controls();
       if (snapshot.error) reportError(snapshot.error);
-      else notify(snapshot.localization?.warning ?? "분석을 완료했습니다. 개념을 선택해 학습을 시작하세요.");
+      else notify(snapshot.warnings?.length ? `분석을 완료했습니다. ${snapshot.warnings.join(' ')}` : snapshot.localization?.warning ?? "분석을 완료했습니다. 개념을 선택해 학습을 시작하세요.");
       if (state.subject) void loadSubject(state.subject.id).catch(reportError);
     }
   },

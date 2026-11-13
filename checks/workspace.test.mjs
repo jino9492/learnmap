@@ -127,6 +127,44 @@ test("failed grading preserves the answer without changing mastery; failed reana
     assert.deepEqual(view.graph,original.graph);
     assert.equal(view.materials[0].status,"ready");
     assert.ok(view.materials[0].error);
+    assert.equal(view.materials[0].error.stage, 'concepts');
+  } finally { await session.close(); }
+});
+
+test('overlapping core groups finish with preserved concepts and warnings, including cached reanalysis', async () => {
+  let organizationCalls = 0;
+  const session = await start(undefined, { clientFactory: () => ({ async generate(request) {
+    if (request.name === 'concept_extraction') {
+      const source = request.data.sources[0];
+      return { concepts: ['신경망', '역전파'].map((name, index) => ({ id: `c${index + 1}`, name,
+        description: source.excerpts[0].text, sourceLocation: source.location, evidence: source.excerpts[0].id })) };
+    }
+    if (request.name === 'concept_organization') {
+      organizationCalls++;
+      const ids = request.data.concepts.map((concept) => concept.id);
+      return { groups: [{ name: '학습', description: '신경망 학습', memberIds: ids },
+        { name: '중복', description: '중복 배정', memberIds: [ids[0]] }] };
+    }
+    assert.equal(request.name, 'relation_analysis');
+    return { relations: [] };
+  } }) });
+  try {
+    const subject = await session.post('/api/subjects', { name: '인공지능' });
+    const uploaded = await session.api(`/api/analyses?filename=notes.txt&subjectId=${subject.id}&mode=conceptual`, {
+      method: 'POST', body: '신경망은 연결 가중치를 사용합니다. 역전파는 출력 오차를 전달하여 가중치를 갱신합니다.',
+    });
+    const first = await waitReady(session.api, uploaded.id);
+    assert.equal(first.error, null);
+    assert.equal(first.graph.concepts.length, 2);
+    assert.equal(first.warnings.length, 1);
+    assert.match(first.warnings[0], /세부 개념과 원문 근거/);
+    await session.post(`/api/materials/${uploaded.id}/analyze`, {});
+    const second = await waitReady(session.api, uploaded.id);
+    assert.equal(second.error, null);
+    assert.equal(second.graph.concepts.length, 2);
+    assert.deepEqual(second.warnings, first.warnings);
+    assert.equal(organizationCalls, 2);
+    assert.ok(second.events.some((event) => event.kind === 'cache' && event.stage === 'organization' && event.status === 'hit'));
   } finally { await session.close(); }
 });
 
@@ -138,4 +176,48 @@ test("merging independently valid materials removes symmetric duplicates and pre
   const result = combineSubject({id:"s"},analyses);
   assert.equal(result.concepts.length,3);
   assert.equal(result.relations.length,2);
+});
+
+test('sequential uploads analyze cross-file prerequisites, persist them, and remove deleted endpoints', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'learnmap-links-'));
+  const storagePath = join(directory, 'workspace.json');
+  const clientFactory = () => ({ async generate(request) {
+    if (request.name === 'concept_extraction') {
+      const source = request.data.sources[0];
+      return { concepts: [{ id: 'c1', name: source.excerpts[0].text.includes('역전파') ? '역전파' : '인공신경망',
+        description: source.excerpts[0].text, sourceLocation: source.location, evidence: source.excerpts[0].id }] };
+    }
+    assert.equal(request.name, 'relation_analysis');
+    const nodes = request.data.concepts;
+    if (nodes.length === 1) return { relations: [] };
+    const source = nodes.find((concept) => concept.name === '인공신경망');
+    const target = nodes.find((concept) => concept.name === '역전파');
+    assert.ok(source.sourceLocation.split('/')[0] !== target.sourceLocation.split('/')[0]);
+    return { relations: [{ source: source.id, target: target.id, type: 'PREREQUISITE', reason: '신경망의 연결 가중치를 이해한 뒤 역전파의 가중치 갱신을 학습합니다.' }] };
+  } });
+  let session = await start(storagePath, { clientFactory });
+  try {
+    const subject = await session.post('/api/subjects', { name: '인공지능' });
+    const upload = (name, body) => session.api(`/api/analyses?filename=${name}.txt&subjectId=${subject.id}`, { method: 'POST', body });
+    const first = await upload('02', '인공신경망은 연결의 가중치를 통해 입력을 출력으로 변환합니다.');
+    await waitReady(session.api, first.id);
+    assert.equal((await session.api(`/api/subjects/${subject.id}`)).graph.relations.length, 0);
+    const second = await upload('03', '역전파는 신경망의 출력 오차를 전달하여 연결 가중치를 갱신합니다.');
+    await waitReady(session.api, second.id);
+    const graph = (await session.api(`/api/subjects/${subject.id}`)).graph;
+    assert.equal(graph.relations.length, 1);
+    assert.equal(graph.relations[0].type, 'PREREQUISITE');
+    await session.close();
+    session = await start(storagePath, { clientFactory });
+    assert.deepEqual((await session.api(`/api/subjects/${subject.id}`)).graph, graph);
+    await session.api(`/api/materials/${second.id}`, { method: 'DELETE' });
+    const remaining = (await session.api(`/api/subjects/${subject.id}`)).graph;
+    assert.equal(remaining.concepts.length, 1);
+    assert.equal(remaining.relations.length, 0);
+  } finally {
+    await session.close();
+    assert.equal(dirname(resolve(directory)), resolve(tmpdir()));
+    assert.ok(basename(directory).startsWith('learnmap-links-'));
+    await rm(directory, { recursive: true, force: true });
+  }
 });

@@ -9,7 +9,7 @@ export function analysisCacheScope(env, options) {
     : provider === "gemini" ? [env.GEMINI_MODEL, env.GEMINI_API_KEY] : [env.OPENAI_MODEL, env.OPENAI_API_KEY];
   // Hash credentials with the configuration; never expose or retain them as cache keys.
   return createHash("sha256").update(JSON.stringify([
-    "analysis-v1", provider, settings, options, prompts,
+    "analysis-v2", provider, settings, options, prompts,
     conceptCollectionSchema.json, relationCollectionSchema.json,
     conceptGenerationSchema(["evidence"]).json, conceptOrganizationSchema(["member"]).json, relationGenerationSchema(["concept"]).json,
   ])).digest("hex");

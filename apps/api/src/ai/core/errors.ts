@@ -1,4 +1,4 @@
-export type ErrorCode = "INPUT" | "CONFIG" | "CONNECTION" | "TIMEOUT" | "PROVIDER" | "FORMAT" | "SEMANTIC" | "REFUSAL";
+export type ErrorCode = "INPUT" | "OCR_REQUIRED" | "CONFIG" | "CONNECTION" | "TIMEOUT" | "PROVIDER" | "FORMAT" | "SEMANTIC" | "REFUSAL";
 
 export class AiError extends Error {
   readonly code: ErrorCode;

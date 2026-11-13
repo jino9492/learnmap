@@ -83,3 +83,26 @@ export function relationKey(relation: Relation): string {
   const pair = relation.type === "RELATED" ? [relation.source, relation.target].sort() : [relation.source, relation.target];
   return JSON.stringify([relation.type, ...pair]);
 }
+
+// Compare every material pair rather than only neighbors in upload order.
+export function crossMaterialWindows(concepts: Concept[]): Concept[][] {
+  const materials = new Map<string, Concept[]>();
+  for (const concept of concepts) {
+    const origin = concept.sourceLocation.split('/')[0];
+    const group = materials.get(origin) ?? [];
+    group.push(concept);
+    materials.set(origin, group);
+  }
+  const groups = [...materials.values()];
+  const windows: Concept[][] = [];
+  for (let left = 0; left < groups.length; left++) {
+    for (let right = left + 1; right < groups.length; right++) {
+      for (let a = 0; a < groups[left].length; a += 4) {
+        for (let b = 0; b < groups[right].length; b += 4) {
+          windows.push([...groups[left].slice(a, a + 4), ...groups[right].slice(b, b + 4)]);
+        }
+      }
+    }
+  }
+  return windows;
+}

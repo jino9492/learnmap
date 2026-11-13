@@ -3,18 +3,24 @@ import { validateGraph } from "../../features/knowledge-graph/index.ts";
 import { validateMaterial } from "../concept-extraction/index.ts";
 import { conceptCollectionSchema, relationGenerationSchema } from "../core/schemas.ts";
 import { prompts } from "../core/prompts.ts";
-import { conceptCitations, conceptSummary, conceptWindows, relationKey } from "../../features/material-analysis/index.ts";
+import { conceptCitations, conceptSummary, conceptWindows, crossMaterialWindows, relationKey } from "../../features/material-analysis/index.ts";
 import { AiError } from "../core/errors.ts";
 import { mapBatches } from "../core/batches.ts";
 import type { BatchOptions } from "../core/batches.ts";
 
-export async function analyzeRelations(client: LlmClient, input: unknown, concepts: Concept[], onProgress?: (progress: AnalysisProgress) => void, options: BatchOptions = {}) {
+interface RelationOptions extends BatchOptions {
+  crossMaterial?: boolean;
+  existingRelations?: Relation[];
+}
+
+export async function analyzeRelations(client: LlmClient, input: unknown, concepts: Concept[], onProgress?: (progress: AnalysisProgress) => void, options: RelationOptions = {}) {
   const material = validateMaterial(input);
   conceptCollectionSchema.parse({ concepts });
   validateGraph({ concepts, relations: [] });
   for (const concept of concepts) conceptCitations(concept, material);
-  const windows = conceptWindows(concepts.map(conceptSummary));
-  const relations = new Map<string, Relation>();
+  const windows = (options.crossMaterial ? crossMaterialWindows : conceptWindows)(concepts.map(conceptSummary));
+  validateGraph({ concepts, relations: options.existingRelations ?? [] });
+  const relations = new Map<string, Relation>((options.existingRelations ?? []).map((relation) => [relationKey(relation), relation]));
   onProgress?.({ stage: "relations", completed: 0, total: windows.length });
   let completed = 0;
   const candidates = await mapBatches(windows, options.concurrency, async (window) => {

@@ -14,6 +14,11 @@ Do not claim that possible learning difficulties are confirmed diagnoses.`;
 export const prompts = {
   concepts: `${safety}
 Task: Extract 0-15 essential concepts grounded only in this material batch. Return no concepts for non-instructional pages.
+Extract independently teachable and assessable ideas, not chapter summaries. Distinguish a definition, a mechanism,
+a learning method and a social effect when each has its own explanation in the sources. For example, machine learning,
+deep learning, supervised learning, reinforcement learning, filter bubbles and deepfake detection are distinct concepts
+IF explained in the material; never invent them from this example list. A broad heading such as "AI technology and applications"
+must not replace the supported specific concepts beneath it. Cover all instructional sections in this batch.
 Use sourceLocation exactly as provided.
 Each source contains excerpts with IDs such as q1, q2. For each concept choose ONE supporting excerpt.
 Set evidence to ONLY that excerpt ID (example: "evidence":"q3"). Set sourceLocation to its source location.
@@ -32,8 +37,13 @@ Use Korean names consistently, even when the document or the examples above are 
 Explain the underlying idea, its purpose and the relationship between grouped details in 1-3 short sentences.
 For each group select memberIds exactly from the supplied IDs. These IDs establish provenance; never invent members.
 Do not combine unrelated concepts merely to reduce the count. One-off examples need not be separate core concepts.
-Usually aim for 3-6 meaningful groups per batch, fewer when the material is narrow. Singleton groups are allowed.
-When the input already contains broad concepts, consolidate equivalent or complementary groups across sections.
+Choose granularity by independent learning objectives, never a target group count. Singleton groups are allowed.
+Merge only equivalent ideas or details that explain the SAME mechanism. Relatedness, a shared chapter, a chronology,
+or a shared technology domain alone is not a reason to merge. Preserve distinctions that could be assessed separately.
+Do not replace distinct ideas with umbrella labels such as "AI history and technology", "AI functions and applications"
+or "AI future and ethics". Use relations to connect such ideas instead. Do not create an umbrella plus duplicate children.
+Assign every supplied member ID to exactly one group. Do not drop items or reuse a member in multiple groups.
+When the input already contains independently assessable concepts, retain them as singleton groups unless equivalent.
 When descriptions show the same meaning under translated names (e.g. template rendering and its translated label),
 organize them together rather than keeping duplicate concepts solely because their labels differ.
 Return an empty list only when no grounded conceptual grouping is possible.`,

@@ -1,5 +1,7 @@
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname } from "node:path";
+import { validateGraph } from '../knowledge-graph/index.ts';
+import { relationKey } from '../material-analysis/index.ts';
 
 export function createWorkspace(storagePath) {
   const analyses = new Map();
@@ -26,7 +28,7 @@ export function createWorkspace(storagePath) {
   void initialized.catch(() => { process.stderr.write("Could not load the local LearnMap workspace. Existing data was not overwritten.\n"); });
   function save() {
     if (!storagePath) return Promise.resolve();
-    const serialize = (item) => ({ ...item, client: undefined, questions: [...item.questions], progress: [...item.progress] });
+    const serialize = (item) => ({ ...item, ...(item.status === 'saving' ? { status: 'ready' } : {}), client: undefined, questions: [...item.questions], progress: [...item.progress] });
     const data = JSON.stringify({ analyses: [...analyses.values()].map(serialize), subjects: [...subjects.values()].map(serialize) });
     const next = pending.catch(() => undefined).then(async () => {
       await mkdir(dirname(storagePath), { recursive: true });
@@ -45,7 +47,7 @@ export function combineSubject(subject, analyses) {
   const relations = [];
   const sources = [];
   const identities = new Map();
-  for (const job of jobs.filter((item) => item.status === "ready")) {
+  for (const job of jobs.filter((item) => ['ready', 'saving'].includes(item.status))) {
     const ids = new Map();
     for (const concept of job.concepts) {
       const identity = JSON.stringify([concept.name.trim().toLowerCase(), concept.description.trim()]);
@@ -77,6 +79,15 @@ export function combineSubject(subject, analyses) {
       relations.push({ ...relation, source, target });
     }
     sources.push(...job.material.sources.map((source) => ({ ...source, location: `${job.id}/${source.location}` })));
+  }
+  const validIds = new Set(concepts.map((concept) => concept.id));
+  const keys = new Set(relations.map(relationKey));
+  for (const relation of subject.crossRelations ?? []) {
+    if (!validIds.has(relation.source) || !validIds.has(relation.target) || keys.has(relationKey(relation))) continue;
+    try { validateGraph({ concepts, relations: [...relations, relation] }); }
+    catch { continue; }
+    relations.push(relation);
+    keys.add(relationKey(relation));
   }
   return {
     ...subject, status: concepts.length ? "ready" : "empty", concepts, relations,

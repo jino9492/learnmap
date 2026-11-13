@@ -57,6 +57,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
   const workspace = createWorkspace(storagePath);
   const { analyses, subjects } = workspace;
   const cache = createAnalysisCache();
+  const subjectLinks = new Map();
   const assets = new Map([
     ["/", { url: new URL("../../web/index.html", import.meta.url), type: "text/html; charset=utf-8" }],
     ["/demo", { url: new URL("../../demo/index.html", import.meta.url), type: "text/html; charset=utf-8" }],
@@ -76,6 +77,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       detailedConcepts: job.status === "ready" && job.mode === "conceptual" ? job.detailedConcepts : undefined,
       localization: job.localization ?? null,
       events: job.events, error: job.error,
+      warnings: (job.events ?? []).filter((event) => event.kind === 'progress' && event.warning).map((event) => event.detail),
       progress: [...job.progress.values()].map(learningProgress),
     };
   }
@@ -85,12 +87,22 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
     await measureAnalysisStage("analysis", async () => {
       const options = analysisOptionsFromEnv(env);
       const scope = analysisCacheScope(env, options);
-      const stage = (name, input, run) => measureAnalysisStage(name, () => {
+      const stage = (name, input, run) => measureAnalysisStage(name, async () => {
         if (!options.cacheEnabled) {
           report({ kind: "cache", stage: name, status: "disabled" });
           return run();
         }
-        return cache.run([scope, name, input], run, (status) => report({ kind: "cache", stage: name, status }));
+        let cacheStatus;
+        const cached = await cache.run([scope, name, input], async () => {
+          const start = job.events.length;
+          const value = await run();
+          return { value, warnings: job.events.slice(start).filter((event) => event.kind === 'progress' && event.warning) };
+        }, (status) => {
+          cacheStatus = status;
+          report({ kind: 'cache', stage: name, status });
+        });
+        if (cacheStatus === 'hit' || cacheStatus === 'shared') cached.warnings.forEach(report);
+        return cached.value;
       }, report);
       job.status = "extracting_text";
       job.material = await measureAnalysisStage("text", () => loadMaterialBytes(name, bytes), report);
@@ -131,20 +143,44 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       }
       if (localized.result.detailedConcepts) job.detailedConcepts = localized.result.detailedConcepts;
       job.localization = localized.report;
-      job.status = "ready";
+      const subject = subjects.get(job.subjectId);
+      if (subject) {
+        job.status = "analyzing_relations";
+        // Serialize subject updates so simultaneous uploads include the last completed graph.
+        const pending = (subjectLinks.get(subject.id) ?? Promise.resolve()).catch(() => {}).then(async () => {
+          const available = new Map(analyses);
+          available.set(job.id, { ...job, status: 'ready' });
+          const combined = combineSubject(subject, available);
+          if (new Set(combined.concepts.map((concept) => concept.sourceLocation.split('/')[0])).size > 1) {
+            const relations = await stage('subject_relations', [combined.material, combined.concepts, combined.relations],
+              () => analyzeRelations(job.client, combined.material, combined.concepts, progress, { ...options, crossMaterial: true, existingRelations: combined.relations }));
+            subject.crossRelations = relations.filter((relation) => {
+              const source = combined.concepts.find((concept) => concept.id === relation.source);
+              const target = combined.concepts.find((concept) => concept.id === relation.target);
+              return source.sourceLocation.split('/')[0] !== target.sourceLocation.split('/')[0];
+            });
+          }
+          job.status = 'saving';
+        });
+        subjectLinks.set(subject.id, pending);
+        try { await pending; }
+        finally { if (subjectLinks.get(subject.id) === pending) subjectLinks.delete(subject.id); }
+      } else job.status = "saving";
     }, report).catch((error) => {
       job.status = "failed";
-      job.error = errorInfo(error);
+      const failedStage = job.events.findLast((event) => event.kind === 'timing' && event.outcome === 'failed' && event.stage !== 'analysis')?.stage;
+      job.error = { ...errorInfo(error), ...(failedStage ? { stage: failedStage } : {}) };
     });
     if (job.status === "failed" && previous) { Object.assign(job, previous); job.status = "ready"; }
     const subject = subjects.get(job.subjectId);
-    if (subject && job.status === "ready" && !job.error) {
+    if (subject && ['ready', 'saving'].includes(job.status) && !job.error) {
       const valid = new Set(combineSubject(subject, analyses).concepts.map((concept) => concept.id));
       for (const id of subject.progress.keys()) if (!valid.has(id)) subject.progress.delete(id);
       for (const [id, stored] of subject.questions) if (!valid.has(stored.conceptId)) subject.questions.delete(id);
       subject.path = null;
     }
     await workspace.save();
+    if (job.status === 'saving') job.status = 'ready';
   }
 
   return createServer(async (request, response) => {
