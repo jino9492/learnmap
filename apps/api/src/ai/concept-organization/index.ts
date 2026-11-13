@@ -5,8 +5,11 @@ import { ensure } from "../core/errors.ts";
 import { validateMaterial } from "../concept-extraction/index.ts";
 import { validateGraph } from "../../features/knowledge-graph/index.ts";
 import { conceptCitations, organizationBatches, organizationSummary } from "../../features/material-analysis/index.ts";
+import { mapBatches, validateConcurrency } from "../core/batches.ts";
+import type { BatchOptions } from "../core/batches.ts";
 
-export async function organizeConcepts(client: LlmClient, input: unknown, detailedConcepts: Concept[], onProgress?: (progress: AnalysisProgress) => void): Promise<Concept[]> {
+export async function organizeConcepts(client: LlmClient, input: unknown, detailedConcepts: Concept[], onProgress?: (progress: AnalysisProgress) => void, options: BatchOptions = {}): Promise<Concept[]> {
+  validateConcurrency(options.concurrency);
   const material = validateMaterial(input);
   conceptCollectionSchema.parse({ concepts: detailedConcepts });
   validateGraph({ concepts: detailedConcepts, relations: [] });
@@ -15,9 +18,10 @@ export async function organizeConcepts(client: LlmClient, input: unknown, detail
   let pool = detailedConcepts.map((concept) => ({ ...concept, memberConceptIds: [concept.id] }));
   for (let round = 1; round <= 3; round++) {
     const batches = organizationBatches(pool);
-    const next: Concept[] = [];
+    let completed = 0;
     onProgress?.({ stage: "organization", completed: 0, total: batches.length, detail: `Core concept organization, round ${round}.` });
-    for (const [index, batch] of batches.entries()) {
+    const results = await mapBatches(batches, options.concurrency, async (batch, index) => {
+      const next: Concept[] = [];
       const byId = new Map(batch.map((concept) => [concept.id, concept]));
       const schema = conceptOrganizationSchema(batch.map((concept) => concept.id));
       const result = schema.parse(await client.generate({ name: "concept_organization", instructions: prompts.organization,
@@ -37,14 +41,16 @@ export async function organizeConcepts(client: LlmClient, input: unknown, detail
         const sources = [...citations.values()];
         const primary = sources[0];
         ensure(primary, "Organized concept has no grounded citation.");
-        next.push({ id: `r${round}:g${next.length + 1}`, name: group.name, description: group.description,
+        next.push({ id: `r${round}:b${index + 1}:g${next.length + 1}`, name: group.name, description: group.description,
           sourceLocation: primary.sourceLocation, evidence: primary.evidence, memberConceptIds: memberIds, citations: sources });
       }
       if (!result.groups.length) {
         next.push(...batch);
-        onProgress?.({ stage: "organization", completed: index + 1, total: batches.length, detail: "No supported grouping returned; original items retained for this batch." });
-      } else onProgress?.({ stage: "organization", completed: index + 1, total: batches.length, detail: `Core concept organization, round ${round}.` });
-    }
+        onProgress?.({ stage: "organization", completed: ++completed, total: batches.length, detail: "No supported grouping returned; original items retained for this batch." });
+      } else onProgress?.({ stage: "organization", completed: ++completed, total: batches.length, detail: `Core concept organization, round ${round}.` });
+      return next;
+    });
+    const next = results.flat();
     const previousCount = pool.length;
     pool = next.map((concept, index) => ({ ...concept, id: `o${round}:${index + 1}`, memberConceptIds: concept.memberConceptIds ?? [concept.id] }));
     if (batches.length === 1 || pool.length >= previousCount) break;

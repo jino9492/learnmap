@@ -1,35 +1,35 @@
 {
   "concept_extraction": {
     "concepts": [
-      { "id": "c1", "name": "Paging", "description": "Division of virtual memory into fixed-size pages.", "sourceLocation": "page:1", "evidence": "Paging divides virtual address space into fixed-size pages." },
-      { "id": "c2", "name": "Page table", "description": "Maps virtual pages to physical frames.", "sourceLocation": "page:1", "evidence": "A page table maps virtual pages to physical frames." },
-      { "id": "c3", "name": "Page fault", "description": "Occurs when a requested page is absent from physical memory.", "sourceLocation": "page:1", "evidence": "A page fault occurs when a requested page is not currently present in physical memory." }
+      { "id": "c1", "name": "페이징", "description": "가상 주소 공간을 일정한 크기의 페이지로 나누는 방식입니다.", "sourceLocation": "page:1", "evidence": "Paging divides virtual address space into fixed-size pages." },
+      { "id": "c2", "name": "페이지 테이블", "description": "가상 페이지를 물리 프레임에 대응시키는 자료 구조입니다.", "sourceLocation": "page:1", "evidence": "A page table maps virtual pages to physical frames." },
+      { "id": "c3", "name": "페이지 폴트", "description": "요청한 페이지가 현재 물리 메모리에 없을 때 발생합니다.", "sourceLocation": "page:1", "evidence": "A page fault occurs when a requested page is not currently present in physical memory." }
     ]
   },
   "relation_analysis": {
     "relations": [
-      { "source": "c1", "target": "c2", "type": "PREREQUISITE", "reason": "Page-table mappings require understanding pages." },
-      { "source": "c2", "target": "c3", "type": "PREREQUISITE", "reason": "The present bit helps identify an absent page." }
+      { "source": "c1", "target": "c2", "type": "PREREQUISITE", "reason": "페이지 테이블의 대응 관계를 이해하려면 페이지의 의미를 먼저 알아야 합니다." },
+      { "source": "c2", "target": "c3", "type": "PREREQUISITE", "reason": "페이지 테이블의 존재 비트는 페이지가 물리 메모리에 있는지 판단하는 데 사용됩니다." }
     ]
   },
   "question_generation": {
     "type": "SHORT_ANSWER",
-    "question": "When does a page fault occur?",
+    "question": "페이지 폴트는 언제 발생하나요?",
     "options": [],
-    "referenceAnswer": "When a requested page is not present in physical memory.",
-    "evaluationCriteria": ["States that a requested page is absent from physical memory."]
+    "referenceAnswer": "요청한 페이지가 현재 물리 메모리에 없을 때 발생합니다.",
+    "evaluationCriteria": ["요청한 페이지가 물리 메모리에 없다는 조건을 설명합니다."]
   },
   "answer_evaluation": {
     "score": 100,
-    "feedback": "The answer correctly identifies the missing page in physical memory.",
+    "feedback": "요청한 페이지가 물리 메모리에 없다는 조건을 정확히 설명했습니다.",
     "weakPoints": []
   },
   "path_recommendation": {
     "steps": [
-      { "conceptId": "c1", "reason": "Review the unit of virtual memory." },
-      { "conceptId": "c2", "reason": "Review mapping and the present bit." },
-      { "conceptId": "c3", "reason": "Apply the prerequisites to the target; even a correct answer benefits from connecting the concepts." }
+      { "conceptId": "c1", "reason": "가상 메모리를 나누는 기본 단위인 페이지를 복습합니다." },
+      { "conceptId": "c2", "reason": "페이지와 프레임의 대응 관계 및 존재 비트를 복습합니다." },
+      { "conceptId": "c3", "reason": "선행 개념을 페이지 폴트에 적용합니다. 정답을 맞혔더라도 개념 사이의 연결을 복습하면 도움이 됩니다." }
     ],
-    "possibleCause": "Uncertainty about page presence may indicate a need to review page-table entries."
+    "possibleCause": "페이지의 존재 여부가 혼동된다면 페이지 테이블 항목에 대한 복습이 필요할 수 있습니다."
   }
 }

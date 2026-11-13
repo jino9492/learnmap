@@ -13,7 +13,7 @@ export async function evaluateAnswer(client: LlmClient, concept: Concept, materi
     const isCorrect = answer === question.referenceAnswer;
     return {
       score: isCorrect ? 100 : 0,
-      feedback: isCorrect ? "Correct." : `Correct answer: ${question.referenceAnswer}`,
+      feedback: isCorrect ? "정답입니다." : `정답: ${question.referenceAnswer}`,
       weakPoints: isCorrect ? [] : [`${concept.name.slice(0, 500)}: 이 문항에서 정답을 선택하지 못했습니다. 구체적인 오개념의 원인은 선택 결과만으로 단정할 수 없습니다.`],
     };
   }

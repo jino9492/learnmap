@@ -5,8 +5,10 @@ import { conceptCollectionSchema, relationGenerationSchema } from "../core/schem
 import { prompts } from "../core/prompts.ts";
 import { conceptCitations, conceptSummary, conceptWindows, relationKey } from "../../features/material-analysis/index.ts";
 import { AiError } from "../core/errors.ts";
+import { mapBatches } from "../core/batches.ts";
+import type { BatchOptions } from "../core/batches.ts";
 
-export async function analyzeRelations(client: LlmClient, input: unknown, concepts: Concept[], onProgress?: (progress: AnalysisProgress) => void) {
+export async function analyzeRelations(client: LlmClient, input: unknown, concepts: Concept[], onProgress?: (progress: AnalysisProgress) => void, options: BatchOptions = {}) {
   const material = validateMaterial(input);
   conceptCollectionSchema.parse({ concepts });
   validateGraph({ concepts, relations: [] });
@@ -14,9 +16,15 @@ export async function analyzeRelations(client: LlmClient, input: unknown, concep
   const windows = conceptWindows(concepts.map(conceptSummary));
   const relations = new Map<string, Relation>();
   onProgress?.({ stage: "relations", completed: 0, total: windows.length });
-  for (const [index, window] of windows.entries()) {
+  let completed = 0;
+  const candidates = await mapBatches(windows, options.concurrency, async (window) => {
     const schema = relationGenerationSchema(window.map((concept) => concept.id));
     const result = schema.parse(await client.generate({ name: "relation_analysis", instructions: prompts.relations, data: { material: { id: material.id, title: material.title }, concepts: window }, schema }));
+    onProgress?.({ stage: "relations", completed: ++completed, total: windows.length });
+    return result;
+  });
+  // Merge in input order so request latency cannot change which conflicting edge survives.
+  for (const result of candidates) {
     const rejected: string[] = [];
     for (const relation of result.relations) {
       const key = relationKey(relation);
@@ -29,9 +37,8 @@ export async function analyzeRelations(client: LlmClient, input: unknown, concep
         rejected.push(`${relation.source} -> ${relation.target}: ${error.message}`);
       }
     }
-    onProgress?.({ stage: "relations", completed: index + 1, total: windows.length,
-      ...(rejected.length ? { detail: `Rejected ${rejected.length} invalid relation candidate(s): ${rejected.join("; ")}` } : {}),
-    });
+    if (rejected.length) onProgress?.({ stage: "relations", completed, total: windows.length,
+      detail: `Rejected ${rejected.length} invalid relation candidate(s): ${rejected.join("; ")}` });
   }
   const result = [...relations.values()];
   validateGraph({ concepts, relations: result });

@@ -34,6 +34,44 @@ function controls() {
   element("reconnect").disabled = !analysisId;
 }
 
+function showAnalysisProgress(value, label) {
+  element("analysis-progress-container").hidden = false;
+  const bar = element("analysis-progress");
+  if (value === undefined) bar.removeAttribute("value");
+  else bar.value = value;
+  element("analysis-status").textContent = label;
+}
+
+function renderAnalysisProgress(state) {
+  if (state.status === "ready") { showAnalysisProgress(100, "분석 완료 (100%)"); return; }
+  if (state.status === "failed") {
+    showAnalysisProgress(element("analysis-progress").value || 0, "분석 실패 — 진행이 중단되었습니다.");
+    return;
+  }
+  const stages = [
+    ["extracting_text", "text", "PDF 텍스트 추출 중"],
+    ["extracting_concepts", "concepts", "개념 추출 중"],
+    ...(state.mode === "conceptual" ? [["organizing_concepts", "organization", "핵심 개념 정리 중"]] : []),
+    ["analyzing_relations", "relations", "관계 분석 중"],
+    ["localizing", "localization", "언어 감지 및 한국어 번안 중"],
+  ];
+  const index = stages.findIndex(([status]) => status === state.status);
+  if (index < 0) { showAnalysisProgress(undefined, "분석 대기 중"); return; }
+  const [, stage, label] = stages[index];
+  const prefix = `${index + 1}/${stages.length}단계 · ${label}`;
+  const progress = state.events.filter((event) => event.kind === "progress" && event.stage === stage).at(-1);
+  const cache = state.events.filter((event) => event.kind === "cache" && event.stage === stage).at(-1);
+  if (cache?.status === "shared") {
+    showAnalysisProgress(undefined, `${prefix} · 같은 자료의 분석 결과를 기다리는 중`);
+  } else if (cache?.status === "hit") {
+    showAnalysisProgress(100, `${prefix} · 저장된 결과 반영 중`);
+  } else if (progress?.total > 0) {
+    const percent = Math.min(100, Math.max(0, Math.round(progress.completed / progress.total * 100)));
+    const round = /round (\d+)/.exec(progress.detail ?? "");
+    showAnalysisProgress(percent, `${prefix}${round ? ` · ${round[1]}차 정리` : ""} · ${progress.completed}/${progress.total} ${stage === "localization" ? "문구" : "묶음"} (${percent}%)`);
+  } else showAnalysisProgress(undefined, `${prefix} · 처리 중`);
+}
+
 function render(state) {
   const wasAnalyzing = analyzing;
   analyzing = !["ready", "failed"].includes(state.status);
@@ -41,11 +79,11 @@ function render(state) {
   connectionLost = false;
   element("connection-status").textContent = "";
   ready = state.status === "ready";
-  const progress = state.events.filter((event) => event.kind === "progress").at(-1);
-  const labels = { queued: "대기 중", extracting_text: "PDF 텍스트 추출 중", extracting_concepts: "개념 추출 중", organizing_concepts: "핵심 개념 정리 중", analyzing_relations: "관계 분석 중", ready: "분석 완료", failed: "분석 실패" };
-  element("analysis-status").textContent = `${labels[state.status] ?? state.status}${progress ? ` (${progress.completed}/${progress.total} 묶음)` : ""}`;
+  renderAnalysisProgress(state);
   showJson("events", state.events);
-  showJson("analysis-result", { mode: state.mode, material: state.material, graph: state.graph, detailedConcepts: state.detailedConcepts, error: state.error });
+  showJson("analysis-result", { mode: state.mode, material: state.material, graph: state.graph, detailedConcepts: state.detailedConcepts, localization: state.localization, error: state.error });
+  if (state.status === "localizing") element("localization-status").textContent = "결과 출력 전에 언어를 확인하고 한국어로 번안하고 있습니다.";
+  else if (wasAnalyzing) showLocalizationStatus(state.localization);
   if (state.error) element("error").textContent = `${state.error.code}: ${state.error.message}`;
   if (ready && !element("concept").options.length) {
     element("concept-mode").value = state.mode ?? "detailed";
@@ -72,6 +110,7 @@ const poller = createAnalysisPoller({
   onFatalError(error) {
     element("error").textContent = error.status === 404 ? "서버 재시작 등으로 이전 분석을 찾을 수 없습니다. PDF를 다시 올려 주세요." : error.message;
     element("operation-status").textContent = "상태 조회 중단";
+    showAnalysisProgress(element("analysis-progress").value || 0, "상태 조회 중단 — 분석 상태를 확인할 수 없습니다.");
     element("connection-status").textContent = "";
     analysisId = undefined;
     question = undefined;
@@ -84,11 +123,18 @@ const poller = createAnalysisPoller({
   },
 });
 
+function showLocalizationStatus(report) {
+  element("localization-status").textContent = report?.warning ?? (report?.status === "completed"
+    ? `한국어 번안 완료: ${report.translated}/${report.detected}개 문구`
+    : report?.status === "skipped" ? "언어 검사 완료: 추가 번안이 필요한 문구가 없습니다." : "");
+}
+
 element("reconnect").addEventListener("click", () => void poller.refresh());
 
 async function perform(label, action) {
   busy = true;
   element("error").textContent = "";
+  element("localization-status").textContent = "";
   element("operation-status").textContent = label;
   controls();
   void poller.start(analysisId);
@@ -118,6 +164,8 @@ element("upload-form").addEventListener("submit", async (event) => {
   element("concept").replaceChildren();
   element("error").textContent = "";
   element("operation-status").textContent = "PDF 분석을 실행 중입니다.";
+  element("localization-status").textContent = "";
+  showAnalysisProgress(undefined, "PDF 업로드 중");
   for (const id of ["analysis-result", "question-result", "evaluation-result", "path-result", "events"]) showJson(id, null);
   controls();
   try {
@@ -127,7 +175,13 @@ element("upload-form").addEventListener("submit", async (event) => {
     saveAnalysis(analysisId);
     busy = false;
     await poller.start(analysisId);
-  } catch (error) { element("error").textContent = error.message; analyzing = false; busy = false; controls(); }
+  } catch (error) {
+    element("error").textContent = error.message;
+    showAnalysisProgress(0, "PDF 업로드 실패");
+    analyzing = false;
+    busy = false;
+    controls();
+  }
 });
 
 element("concept").addEventListener("change", () => {
@@ -142,6 +196,7 @@ element("generate-question").addEventListener("click", () => perform("문제를 
   question = undefined;
   controls();
   question = await post("questions", { conceptId: element("concept").value, type: element("question-type").value, difficulty: element("difficulty").value });
+  showLocalizationStatus(question.localization);
   showJson("question-result", question);
   showJson("evaluation-result", null);
   element("answer").value = "";
@@ -162,12 +217,16 @@ element("answer-form").addEventListener("submit", (event) => {
   if (!question) return;
   void perform("답안을 평가 중입니다.", async () => {
     const answer = question.question.type === "MULTIPLE_CHOICE" ? element("answer-option").value : element("answer").value;
-    showJson("evaluation-result", await post("evaluations", { questionId: question.questionId, answer }));
+    const result = await post("evaluations", { questionId: question.questionId, answer });
+    showJson("evaluation-result", result);
+    showLocalizationStatus(result.localization);
   });
 });
 
 element("recommend-path").addEventListener("click", () => perform("학습 경로를 추천 중입니다.", async () => {
-  showJson("path-result", await post("path", { conceptId: element("concept").value }));
+  const result = await post("path", { conceptId: element("concept").value });
+  showJson("path-result", result);
+  showLocalizationStatus(result.localization);
 }));
 
 request("/api/config").then((value) => {
@@ -178,6 +237,7 @@ if (previousAnalysis) {
   analysisId = previousAnalysis;
   analyzing = true;
   element("operation-status").textContent = "이전 분석 상태를 확인 중입니다.";
+  showAnalysisProgress(undefined, "이전 분석의 진행 상태를 확인 중입니다.");
   controls();
   void poller.start(analysisId);
 }

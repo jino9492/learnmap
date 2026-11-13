@@ -2,8 +2,13 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { createConfiguredClient, extractConcepts, organizeConcepts, analyzeRelations, generateQuestion, publicQuestion, evaluateAnswer, recommendPath, AiError } from "./ai/index.ts";
+import { createConfiguredClient, analysisOptionsFromEnv, extractConcepts, organizeConcepts, analyzeRelations, generateQuestion, publicQuestion, evaluateAnswer, recommendPath, localizeResult, AiError } from "./ai/index.ts";
 import { loadMaterialBytes } from "./features/materials/index.mjs";
+import { createAnalysisCache, analysisCacheScope } from "./features/material-analysis/cache.mjs";
+import { measureAnalysisStage } from "./features/material-analysis/timing.mjs";
+import { validateGraph } from "./features/knowledge-graph/index.ts";
+import { validateQuestion } from "./ai/question-generation/index.ts";
+import { conceptCollectionSchema, relationCollectionSchema, evaluationSchema, recommendationSchema } from "./ai/core/schemas.ts";
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -48,6 +53,7 @@ function send(response, status, value) {
 
 export function createDemoServer({ env = process.env, clientFactory = (onEvent) => createConfiguredClient(env, { onEvent }) } = {}) {
   const analyses = new Map();
+  const cache = createAnalysisCache();
   const assets = new Map([
     ["/", { url: new URL("../../demo/index.html", import.meta.url), type: "text/html; charset=utf-8" }],
     ["/app.js", { url: new URL("../../demo/app.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
@@ -58,33 +64,60 @@ export function createDemoServer({ env = process.env, clientFactory = (onEvent) 
     return {
       id: job.id, status: job.status, busy: job.busy, mode: job.mode,
       material: job.material ? { id: job.material.id, title: job.material.title, sourceCount: job.material.sources.length } : null,
-      graph: job.concepts ? { concepts: job.concepts, relations: job.relations ?? null } : null,
-      detailedConcepts: job.mode === "conceptual" ? job.detailedConcepts : undefined,
+      graph: job.status === "ready" ? { concepts: job.concepts, relations: job.relations } : null,
+      detailedConcepts: job.status === "ready" && job.mode === "conceptual" ? job.detailedConcepts : undefined,
+      localization: job.localization ?? null,
       events: job.events, error: job.error,
     };
   }
 
   async function analyze(job, name, bytes) {
-    try {
+    const report = (event) => job.events.push(event);
+    await measureAnalysisStage("analysis", async () => {
+      const options = analysisOptionsFromEnv(env);
+      const scope = analysisCacheScope(env, options);
+      const stage = (name, input, run) => measureAnalysisStage(name, () => {
+        if (!options.cacheEnabled) {
+          report({ kind: "cache", stage: name, status: "disabled" });
+          return run();
+        }
+        return cache.run([scope, name, input], run, (status) => report({ kind: "cache", stage: name, status }));
+      }, report);
       job.status = "extracting_text";
-      job.material = await loadMaterialBytes(name, bytes);
+      job.material = await measureAnalysisStage("text", () => loadMaterialBytes(name, bytes), report);
       job.client = clientFactory((event) => job.events.push({ kind: "request", ...event }));
       const progress = (event) => job.events.push({ kind: "progress", ...event });
       job.status = "extracting_concepts";
-      const batchValue = env.AI_BATCH_CHARACTERS?.trim();
-      job.detailedConcepts = await extractConcepts(job.client, job.material, progress, { batchCharacters: batchValue ? Number(batchValue) : undefined });
+      job.detailedConcepts = await stage("concepts", job.material, () => extractConcepts(job.client, job.material, progress, options));
       job.concepts = job.detailedConcepts;
       if (job.mode === "conceptual") {
         job.status = "organizing_concepts";
-        job.concepts = await organizeConcepts(job.client, job.material, job.detailedConcepts, progress);
+        job.concepts = await stage("organization", [job.material, job.detailedConcepts], () => organizeConcepts(job.client, job.material, job.detailedConcepts, progress, options));
       }
       job.status = "analyzing_relations";
-      job.relations = await analyzeRelations(job.client, job.material, job.concepts, progress);
+      job.relations = await stage("relations", [job.material, job.concepts], () => analyzeRelations(job.client, job.material, job.concepts, progress, options));
+      job.status = "localizing";
+      const localized = await measureAnalysisStage("localization", () => localizeResult(job.client, {
+        graph: { concepts: job.concepts, relations: job.relations },
+        ...(job.mode === "conceptual" ? { detailedConcepts: job.detailedConcepts } : {}),
+      }, { onProgress(event) {
+        job.localization = { status: "running", completed: event.completed, total: event.total };
+        progress(event);
+      }, validate(value) {
+        conceptCollectionSchema.parse({ concepts: value.graph.concepts });
+        relationCollectionSchema.parse({ relations: value.graph.relations });
+        validateGraph(value.graph);
+        if (value.detailedConcepts) conceptCollectionSchema.parse({ concepts: value.detailedConcepts });
+      } }), report);
+      job.concepts = localized.result.graph.concepts;
+      job.relations = localized.result.graph.relations;
+      if (localized.result.detailedConcepts) job.detailedConcepts = localized.result.detailedConcepts;
+      job.localization = localized.report;
       job.status = "ready";
-    } catch (error) {
+    }, report).catch((error) => {
       job.status = "failed";
       job.error = errorInfo(error);
-    }
+    });
   }
 
   return createServer(async (request, response) => {
@@ -138,23 +171,26 @@ export function createDemoServer({ env = process.env, clientFactory = (onEvent) 
           if (!stored) throw new HttpError(400, "Unknown question ID.");
           const concept = job.concepts.find((concept) => concept.id === stored.conceptId);
           const answer = text(input.answer, "answer");
-          const evaluation = await evaluateAnswer(job.client, concept, job.material, stored.question, answer);
+          const rawEvaluation = await evaluateAnswer(job.client, concept, job.material, stored.question, answer);
+          const { result: evaluation, report: localization } = await localizeResult(job.client, rawEvaluation, { validate: (value) => evaluationSchema.parse(value) });
           const history = job.progress.get(concept.id) ?? { conceptId: concept.id, scores: [], recentMistakes: [] };
           history.scores = [...history.scores, evaluation.score].slice(-100);
           history.recentMistakes = evaluation.weakPoints;
           job.progress.set(concept.id, history);
-          send(response, 200, { evaluation });
+          send(response, 200, { evaluation, localization });
         } else {
           const concept = job.concepts.find((concept) => concept.id === text(input.conceptId, "concept ID"));
           if (!concept) throw new HttpError(400, "Unknown concept ID.");
           if (match[2] === "questions") {
-            const question = await generateQuestion(job.client, concept, job.material, input.type ?? "SHORT_ANSWER", input.difficulty ?? "MEDIUM");
+            const rawQuestion = await generateQuestion(job.client, concept, job.material, input.type ?? "SHORT_ANSWER", input.difficulty ?? "MEDIUM");
+            const { result: question, report: localization } = await localizeResult(job.client, rawQuestion, { validate: validateQuestion });
             const id = randomUUID();
             job.questions.set(id, { conceptId: concept.id, question });
-            send(response, 200, { questionId: id, conceptId: concept.id, question: publicQuestion(question) });
+            send(response, 200, { questionId: id, conceptId: concept.id, question: publicQuestion(question), localization: { status: localization.status, detected: localization.detected, translated: localization.translated, warning: localization.warning } });
           } else {
-            const path = await recommendPath(job.client, { concepts: job.concepts, relations: job.relations }, concept.id, [...job.progress.values()]);
-            send(response, 200, { path });
+            const rawPath = await recommendPath(job.client, { concepts: job.concepts, relations: job.relations }, concept.id, [...job.progress.values()]);
+            const { result: path, report: localization } = await localizeResult(job.client, rawPath, { validate: (value) => recommendationSchema.parse(value) });
+            send(response, 200, { path, localization });
           }
         }
       } finally { job.busy = false; }

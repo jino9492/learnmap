@@ -4,6 +4,19 @@ import { createGeminiClient } from "./gemini-client.ts";
 import { createOllamaClient } from "./ollama-client.ts";
 import { AiError, ensure } from "./errors.ts";
 import type { TransportOptions } from "./http.ts";
+import { validateConcurrency } from "./batches.ts";
+
+export function analysisOptionsFromEnv(env: Record<string, string | undefined>) {
+  const provider = env.AI_PROVIDER?.trim().toLowerCase() || "openai";
+  const concurrencyValue = env.AI_CONCURRENCY?.trim();
+  const concurrency = validateConcurrency(concurrencyValue ? Number(concurrencyValue) : provider === "ollama" ? 1 : 2);
+  const batchValue = env.AI_BATCH_CHARACTERS?.trim();
+  const batchCharacters = batchValue ? Number(batchValue) : 6000;
+  ensure(Number.isInteger(batchCharacters) && batchCharacters >= 1000 && batchCharacters <= 12000, "AI_BATCH_CHARACTERS must be an integer from 1000 to 12000.", "CONFIG");
+  const cacheValue = env.AI_ANALYSIS_CACHE?.trim() || "1";
+  ensure(["0", "1"].includes(cacheValue), "AI_ANALYSIS_CACHE must be 0 or 1.", "CONFIG");
+  return { concurrency, batchCharacters, cacheEnabled: cacheValue === "1" };
+}
 
 export function createConfiguredClient(env: Record<string, string | undefined>, options: TransportOptions = {}): LlmClient {
   const provider = env.AI_PROVIDER?.trim().toLowerCase() || "openai";
