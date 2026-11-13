@@ -3,7 +3,7 @@ import { ensure } from "../core/errors.ts";
 import { choice, list, object, text } from "../core/schema.ts";
 import { safety } from "../core/prompts.ts";
 
-const fields = new Set(["name", "description", "reason", "question", "options", "referenceAnswer", "evaluationCriteria", "feedback", "weakPoints", "possibleCause"]);
+const fields = new Set(["name", "description", "reason", "question", "options", "referenceAnswer", "evaluationCriteria", "feedback", "possibleCause"]);
 const excluded = new Set(["material", "sources", "source", "citations", "evidence"]);
 const codePattern = /```[\s\S]*?```|`[^`\n]+`/g;
 

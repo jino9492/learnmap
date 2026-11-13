@@ -85,9 +85,9 @@ async function main() {
     const { status, detected, translated, warning } = localizedQuestion.report;
     stdout.write(`${JSON.stringify({ ...publicQuestion(question), localization: { status, detected, translated, warning } }, null, 2)}\n`);
     const answer = isDemo ? "The requested page is absent from physical memory." : await terminal.question("Your answer: ");
-    const localizedEvaluation = await localizeResult(client, await evaluateAnswer(client, concept, material, question, answer), { validate: (value) => evaluationSchema.parse(value) });
+    const localizedEvaluation = await localizeResult(client, await evaluateAnswer(client, concept, material, question, answer, { concepts, relations }), { validate: (value) => evaluationSchema.parse(value) });
     const evaluation = localizedEvaluation.result;
-    const localizedPath = await localizeResult(client, await recommendPath(client, { concepts, relations }, conceptId, [{ conceptId, scores: [evaluation.score], recentMistakes: evaluation.weakPoints }]), { validate: (value) => recommendationSchema.parse(value) });
+    const localizedPath = await localizeResult(client, await recommendPath(client, { concepts, relations }, conceptId, [{ conceptId, scores: [evaluation.score], recentMistakes: evaluation.weakPoints.map((id) => `${id}: ${evaluation.feedback}`.slice(0, 2000)) }]), { validate: (value) => recommendationSchema.parse(value) });
     stdout.write(`${JSON.stringify({ evaluation, path: localizedPath.result, localization: { evaluation: localizedEvaluation.report, path: localizedPath.report } }, null, 2)}\n`);
   } finally { terminal.close(); }
 }

@@ -46,6 +46,9 @@ export const questionSchema = object<Question>({
   options: list(text, 0, 4), referenceAnswer: text, evaluationCriteria: list(text, 1, 6),
 });
 export const evaluationSchema = object<Evaluation>({ score, feedback: text, weakPoints: list(text, 0, 10) });
+export function evaluationGenerationSchema(conceptIds: string[]) {
+  return object<Evaluation>({ score, feedback: text, weakPoints: list(choice(...conceptIds), 0, 10) });
+}
 export const recommendationSchema = object<Recommendation>({
   steps: list(object({ conceptId: text, reason: text }), 1, Infinity), possibleCause: text,
 });

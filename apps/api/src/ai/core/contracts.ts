@@ -70,6 +70,7 @@ export interface Question {
 export interface Evaluation {
   score: number;
   feedback: string;
+  /** IDs of concepts inferred to need review; explanations belong in feedback. */
   weakPoints: string[];
 }
 

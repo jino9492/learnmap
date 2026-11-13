@@ -171,11 +171,11 @@ export function createDemoServer({ env = process.env, clientFactory = (onEvent) 
           if (!stored) throw new HttpError(400, "Unknown question ID.");
           const concept = job.concepts.find((concept) => concept.id === stored.conceptId);
           const answer = text(input.answer, "answer");
-          const rawEvaluation = await evaluateAnswer(job.client, concept, job.material, stored.question, answer);
+          const rawEvaluation = await evaluateAnswer(job.client, concept, job.material, stored.question, answer, { concepts: job.concepts, relations: job.relations });
           const { result: evaluation, report: localization } = await localizeResult(job.client, rawEvaluation, { validate: (value) => evaluationSchema.parse(value) });
           const history = job.progress.get(concept.id) ?? { conceptId: concept.id, scores: [], recentMistakes: [] };
           history.scores = [...history.scores, evaluation.score].slice(-100);
-          history.recentMistakes = evaluation.weakPoints;
+          history.recentMistakes = evaluation.weakPoints.map((id) => `${id}: ${evaluation.feedback}`.slice(0, 2000));
           job.progress.set(concept.id, history);
           send(response, 200, { evaluation, localization });
         } else {

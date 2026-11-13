@@ -50,17 +50,48 @@ Task: Generate one question of the requested type and difficulty, grounded in th
 If additional sources are provided, use them together to assess the whole conceptual unit, not only its first excerpt.
 Include referenceAnswer and 1-6 concrete evaluationCriteria. Each criterion must describe an observable required
 answer element for THIS question. Do not list learner levels, grading bands or labels such as expert/intermediate/beginner/none.
-For MULTIPLE_CHOICE return exactly four distinct
-options and referenceAnswer equal to the correct option text. For other types options must be empty.
+For MULTIPLE_CHOICE return exactly four distinct options with EXACTLY ONE defensible correct answer to the stem,
+and referenceAnswer equal to that option text. Each distractor must be demonstrably false or incompatible with the
+explicit stem, not merely less detailed, less important, absent from an excerpt, or different from the preferred wording.
+Never pair a broadly true summary with another true specific statement as competing options. Ask a precise,
+source-supported question if a broad historical-significance question admits several true answers.
+Criteria must assess the chosen option, not demand extra facts or an explanation the learner cannot submit.
+For other types options must be empty.
 The question must not reveal the answer.`,
+  choiceReview: `${safety}
+Task: Independently review this single-answer multiple-choice question before grading a learner.
+You are not given a preferred answer. Evaluate EVERY option against the exact stem and supplied sources.
+Return acceptableOptions containing the exact text of ALL defensible answers, not just the best or most detailed one.
+Do not reject a true option merely because it omits participants, dates or details not explicitly required by the stem.
+An option absent from the source is not thereby false. If it remains plausibly correct, include it so this ambiguous
+question cannot be used to infer a learner weakness. Be alert to broad true summaries competing with true specifics,
+historical oversimplifications, and distinctions not established in the source. If no answer is defensible, return [].
+In explanation give a short Korean justification for the accepted options or why none is supported.
+This reviews question quality, not learner mastery; never invent a weakness to defend an answer key.`,
   evaluation: `${safety}
 Task: Assess the submitted answer against the stored question, reference answer, criteria and source.
 Use additional supplied sources when present. Do not demand details beyond the question and its stated criteria.
 Accept semantically equivalent paraphrases. Do not assume unstated knowledge. Return a score from 0 to 100,
-evidence-based feedback and missing or misunderstood points. weakPoints must name specific errors or omissions
-demonstrated by this answer, linked to the question and its criteria. Never copy the whole rubric, list mastery levels,
-or infer unrelated weaknesses. If a specific weakness cannot be established, do not invent one.
-A full-credit answer has no weakPoints.`,
+evidence-based feedback and missing or misunderstood points. For MULTIPLE_CHOICE, determinedScore is authoritative:
+return that score and compare the selected distractor with the correct option to infer the likely confusion.
+The question has passed a separate single-answer review. Explain the actual false claim or contradiction in the
+chosen option, not missing details a learner could not add to a fixed option. Never invent required participants,
+dates or other criteria to rationalize an answer key. Selecting an option is not submitting an incomplete essay.
+Use connectedConcepts (with their sources) and relations to explain relevant gaps. PARENT_CHILD is broader to narrower;
+PREREQUISITE is required knowledge to dependent knowledge; RELATED is symmetric. Inspect both incoming and outgoing
+relations, but mention only those that help explain this answer; a connected node alone is not evidence of a weakness.
+weakPoints must be an array of unique concept ID strings selected ONLY from candidateConceptIds, never prose,
+concept names, objects or invented IDs. Select the tested concept and/or connected concepts whose misunderstanding
+most plausibly explains this answer. Do not mark every neighbor weak just because it is connected.
+For every score below 100 return at least one weak concept ID. In feedback explain which selected node each ID refers
+to, the likely conceptual confusion, why the answer suggests it, and what distinction to review. Use the supplied
+concept names with their IDs and correct Korean terminology (e.g. 딥러닝). Phrase inferred causes as possibilities
+(e.g. "혼동했을 가능성이 있습니다"), never as confirmed diagnoses. When evidence is limited, give the most plausible
+question-specific hypothesis grounded in the answer/reference contrast and available concept relationships.
+Never stop at "선택 결과만으로 단정할 수 없습니다", "판단할 수 없습니다", insufficient-information disclaimers,
+or a generic statement that the answer is wrong. If no connected nodes exist, use the question and its source.
+Never copy the whole rubric, list mastery levels, invent relations, or infer unrelated weaknesses.
+A full-credit answer has an empty weakPoints array.`,
   path: `${safety}
 Task: Recommend a learning sequence from the supplied prerequisite subgraph, ending at targetConceptId.
 Include ALL supplied concepts exactly once with prerequisites before dependents. Explain why each is included,
