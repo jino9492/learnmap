@@ -6,10 +6,11 @@
     "node": ">=24"
   },
   "scripts": {
+    "start": "node --env-file-if-exists=.env apps/api/src/demo-server.mjs",
     "ai": "node --env-file-if-exists=.env apps/api/src/cli.mjs",
     "demo": "node apps/api/src/cli.mjs --demo",
     "demo:web": "node --env-file-if-exists=.env apps/api/src/demo-server.mjs",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test tests/*.test.mjs checks/*.test.mjs",
     "benchmark:analysis": "node scripts/benchmark-analysis.mjs"
   },
   "dependencies": {
