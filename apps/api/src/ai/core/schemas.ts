@@ -53,6 +53,7 @@ export function questionGenerationSchema(type: QuestionType) {
   });
 }
 export const evaluationSchema = object<Evaluation>({ score, feedback: text, weakPoints: list(text, 0, 10) });
+export const evaluationFeedbackSchema = object<{ feedback: string }>({ feedback: boundedText(1600) });
 export function evaluationGenerationSchema(conceptIds: string[], feedbackCharacters = 12000) {
   return object<Evaluation>({ score, feedback: boundedText(feedbackCharacters), weakPoints: list(choice(...conceptIds), 0, 10) });
 }

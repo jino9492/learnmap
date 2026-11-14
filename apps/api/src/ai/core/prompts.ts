@@ -25,8 +25,16 @@ Task: Explain a learner's possible misconception using ONLY this batch of connec
 The grading.score and determinedScore are authoritative: copy that score exactly, do not regrade or vote on it.
 Use the stored question, answer and reference answer to identify supported conceptual confusion, not mere adjacency.
 Return at most 3 unique weakPoints from candidateConceptIds and concise Korean feedback of at most 600 characters.
+Report only additional insights from this batch; do not restate grading.feedback or repeat the main grading explanation.
 If this batch adds no supported explanation, return weakPoints: [] and explain briefly that no additional gap was found.
 Never claim every neighbor is weak. Treat inferred causes as possibilities, not diagnoses.`,
+  evaluationFeedback: `${safety}
+Task: Consolidate the supplied grading feedback and optional connected-concept findings into ONE concise Korean paragraph.
+Merge semantically overlapping explanations, even when worded differently. Explain the main answer/reference distinction
+once, then include only useful new review guidance supported by the findings. Do not repeat the question or full rubric.
+Preserve the grading conclusion. Do not regrade, add claims, or infer new weaknesses. Use the supplied weak concept names
+when useful and describe inferred confusion as a possibility. Return only feedback, at most 1600 characters.
+Do not mention batches, partitions, or the consolidation process.`,
   concepts: `${safety}
 Task: Extract 0-15 essential concepts grounded only in this material batch. Return no concepts for non-instructional pages.
 Extract independently teachable and assessable ideas, not chapter summaries. Distinguish a definition, a mechanism,
@@ -97,6 +105,7 @@ In explanation give a short Korean justification for the accepted options or why
 This reviews question quality, not learner mastery; never invent a weakness to defend an answer key.`,
   evaluation: `${safety}
 Task: Assess the submitted answer against the stored question, reference answer, criteria and source.
+Write feedback as one concise, coherent paragraph; explain each distinction only once without paraphrasing it repeatedly.
 Use additional supplied sources when present. Do not demand details beyond the question and its stated criteria.
 Accept semantically equivalent paraphrases. Do not assume unstated knowledge. Return a score from 0 to 100,
 evidence-based feedback and missing or misunderstood points. For MULTIPLE_CHOICE, determinedScore is authoritative:

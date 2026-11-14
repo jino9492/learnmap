@@ -1,7 +1,7 @@
 import type { Concept, Evaluation, Graph, LlmClient, Material, Question } from "../core/contracts.ts";
 import { AiError, ensure } from "../core/errors.ts";
 import { prompts } from "../core/prompts.ts";
-import { evaluationGenerationSchema } from "../core/schemas.ts";
+import { evaluationFeedbackSchema, evaluationGenerationSchema } from "../core/schemas.ts";
 import { prepareQuestionContext, questionContext, reviewChoiceQuestion, validateQuestion } from "../question-generation/index.ts";
 import { validateGraph } from "../../features/knowledge-graph/index.ts";
 import { conceptSummary } from "../../features/material-analysis/index.ts";
@@ -61,7 +61,7 @@ export async function evaluateAnswer(client: LlmClient, concept: Concept, materi
     ensure(grading.score !== 100 || grading.weakPoints.length === 0, "Full credit is inconsistent with missing criteria.");
     if (grading.score === 100) return grading;
     const points = new Set(grading.weakPoints);
-    const feedback = [grading.feedback];
+    const findings: string[] = [];
     let incomplete = false;
     let diagnosisFailures = 0;
     let stopDiagnosis = false;
@@ -83,8 +83,9 @@ export async function evaluateAnswer(client: LlmClient, concept: Concept, materi
         });
         for (const diagnosis of results) {
           for (const id of diagnosis.weakPoints) if (points.size < 10) points.add(id);
-          // Keep complete validated feedback paragraphs within the public schema limit.
-          if (feedback.join("\n\n").length + diagnosis.feedback.length < 11000) feedback.push(diagnosis.feedback);
+          // These are internal findings, never paragraphs to concatenate for the learner.
+          if (diagnosis.weakPoints.length && !findings.includes(diagnosis.feedback)
+            && findings.join("").length + diagnosis.feedback.length <= 6000) findings.push(diagnosis.feedback);
         }
         if (stopDiagnosis) break;
       } catch (error) {
@@ -95,7 +96,23 @@ export async function evaluateAnswer(client: LlmClient, concept: Concept, materi
       }
     }
     if (incomplete) diagnosticWarning = "일부 연결 개념의 추가 분석을 완료하지 못했습니다. 점수는 문항과 채점 기준에 대한 평가 결과입니다.";
-    return { score: grading.score, feedback: feedback.join("\n\n"), weakPoints: [...points] };
+    let feedback = grading.feedback;
+    if (findings.length) {
+      const weakConcepts = graph.concepts.filter((entry) => points.has(entry.id))
+        .map((entry) => ({ id: entry.id, name: entry.name.slice(0, 100) }));
+      // A failed optional rewrite must still leave one usable explanation.
+      const additionalNames = weakConcepts.filter((entry) => !grading.weakPoints.includes(entry.id)).map((entry) => entry.name);
+      if (additionalNames.length) feedback += ` 함께 복습할 연결 개념: ${additionalNames.join(", ")}.`;
+      try {
+        const request = { name: "evaluation_feedback", instructions: prompts.evaluationFeedback,
+          data: { grading: { score: grading.score, feedback: grading.feedback }, findings, weakConcepts },
+          schema: evaluationFeedbackSchema };
+        feedback = request.schema.parse(await client.generate(request)).feedback;
+      } catch (error) {
+        if (!(error instanceof AiError) || ["CONFIG", "INPUT", "REFUSAL"].includes(error.code) || error.reason === "AUTH" || error.reason === "MODEL_NOT_FOUND") throw error;
+      }
+    }
+    return { score: grading.score, feedback, weakPoints: [...points] };
   }
   // The model explains the distractor; it cannot change exact-choice scoring.
   if (question.type === "MULTIPLE_CHOICE") result.score = 0;
