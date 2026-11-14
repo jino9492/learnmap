@@ -128,10 +128,30 @@ Use Hangul instead of Chinese characters or Japanese scripts in prose. Return on
   }
   try { options.validate?.(result); }
   catch { result = structuredClone(input); errors++; }
-  const unresolved = detectOutputLanguage(result);
+  // Feedback must not expose a failed foreign-language generation to the learner.
+  // Reuse the same protected translation path once; description avoids recursion.
+  const hiddenFeedback: LanguageFinding[] = [];
+  for (const target of targetsFor(result).filter((target) => target.path.endsWith("/feedback"))) {
+    const retry = await localizeResult(client, { description: target.value });
+    errors += retry.report.errors;
+    let accepted = retry.report.status === "completed";
+    if (accepted) {
+      target.set(retry.result.description);
+      try { options.validate?.(result); }
+      catch { accepted = false; errors++; }
+    }
+    if (!accepted) {
+      target.set("평가 피드백을 한국어로 정리하지 못했습니다. 점수는 유지되며, 자세한 설명은 다시 평가해 주세요.");
+      hiddenFeedback.push({ path: target.path, reason: target.reason });
+    }
+  }
+  // Retain failure paths in the report even when unsafe feedback was hidden.
+  const unresolved = [...detectOutputLanguage(result), ...hiddenFeedback];
   const translated = findings.length - unresolved.length;
   const status = !unresolved.length ? "completed" : translated ? "partial" : "failed";
   return { result, report: { status, detected: findings.length, translated, errors, findings, unresolved,
-    ...(unresolved.length ? { warning: "일부 문구를 한국어로 번안하지 못해 해당 문구는 원래 결과를 유지했습니다." } : {}),
+    ...(unresolved.length ? { warning: hiddenFeedback.length
+      ? "일부 문구를 한국어로 번안하지 못했습니다. 미번안 평가 피드백은 한국어 안내로 대체했으며 점수는 유지했습니다."
+      : "일부 문구를 한국어로 번안하지 못해 해당 문구는 원래 결과를 유지했습니다." } : {}),
   } };
 }

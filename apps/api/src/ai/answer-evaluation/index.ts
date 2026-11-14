@@ -105,7 +105,8 @@ export async function evaluateAnswer(client: LlmClient, concept: Concept, materi
       if (additionalNames.length) feedback += ` 함께 복습할 연결 개념: ${additionalNames.join(", ")}.`;
       try {
         const request = { name: "evaluation_feedback", instructions: prompts.evaluationFeedback,
-          data: { grading: { score: grading.score, feedback: grading.feedback }, findings, weakConcepts },
+          data: { grading: { score: grading.score, feedback: grading.feedback }, findings, weakConcepts,
+            questionContext: context, question, answer },
           schema: evaluationFeedbackSchema };
         feedback = request.schema.parse(await client.generate(request)).feedback;
       } catch (error) {
@@ -129,6 +130,27 @@ export async function evaluateAnswer(client: LlmClient, concept: Concept, materi
       result.feedback = `${concept.name.slice(0, 300)}: 제출 답안 '${answer.slice(0, 1000)}'과 모범 답안 '${question.referenceAnswer.slice(0, 1000)}'의 핵심 내용을 혼동했을 가능성이 있습니다. 두 답안의 차이를 비교해 이 문항에서 요구하는 개념을 복습하세요.${connection}`;
     }
   }
-  if (diagnosticWarning) result.feedback += `\n\n${diagnosticWarning}`;
+  // Check single-request feedback too: repetition can originate inside one model response.
+  const needsRewrite = (feedback: string) => feedback.length > 450
+    || feedback.split(/(?<=[.!?。])\s+/u).filter(Boolean).length > 3
+    || /이해하지\s*못|이해가\s*부족/.test(feedback)
+    || (question.type === "MULTIPLE_CHOICE" && /설명해야|설명하지\s*않|언급하지\s*않/.test(feedback));
+  if (needsRewrite(result.feedback)) {
+    const draft = result.feedback;
+    // Never fall back to a repetitive or accusatory draft if rewriting fails.
+    result.feedback = question.type === "MULTIPLE_CHOICE"
+      ? `선택한 답은 '${answer.slice(0, 120)}'이며, 정답은 '${question.referenceAnswer.slice(0, 120)}'입니다. 자료에서 두 선택지를 구분하는 기준을 비교해 보세요.`
+      : `모범 답안의 핵심은 '${question.referenceAnswer.slice(0, 240)}'입니다. 제출한 답안과 비교해 빠지거나 다른 내용을 확인해 보세요.`;
+    try {
+      const request = { name: "evaluation_feedback", instructions: prompts.evaluationFeedback,
+        data: { questionContext: context, question, answer, grading: { score: result.score, feedback: draft.slice(0, 6000) } },
+        schema: evaluationFeedbackSchema };
+      const polished = request.schema.parse(await client.generate(request)).feedback;
+      if (!needsRewrite(polished)) result.feedback = polished.replace(/\s*\n\s*/g, " ").trim();
+    } catch (error) {
+      if (!(error instanceof AiError) || ["CONFIG", "INPUT", "REFUSAL"].includes(error.code) || error.reason === "AUTH" || error.reason === "MODEL_NOT_FOUND") throw error;
+    }
+  }
+  if (diagnosticWarning) result.feedback += ` ${diagnosticWarning}`;
   return schema.parse(result);
 }
