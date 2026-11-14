@@ -2,10 +2,12 @@ export type ErrorCode = "INPUT" | "OCR_REQUIRED" | "CONFIG" | "CONNECTION" | "TI
 
 export class AiError extends Error {
   readonly code: ErrorCode;
-  constructor(code: ErrorCode, message: string) {
+  readonly reason?: "CONTEXT_LIMIT" | "RATE_LIMIT" | "AUTH" | "MODEL_NOT_FOUND" | "UNAVAILABLE";
+  constructor(code: ErrorCode, message: string, reason?: AiError["reason"]) {
     super(message);
     this.name = "AiError";
     this.code = code;
+    this.reason = reason;
   }
 }
 

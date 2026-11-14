@@ -7,6 +7,7 @@ import { conceptCitations, conceptSummary, conceptWindows, crossMaterialWindows,
 import { AiError } from "../core/errors.ts";
 import { mapBatches } from "../core/batches.ts";
 import type { BatchOptions } from "../core/batches.ts";
+import { canSplitFailure, requestCharacters, REQUEST_CHARACTERS } from "../core/partition.ts";
 
 interface RelationOptions extends BatchOptions {
   crossMaterial?: boolean;
@@ -24,8 +25,31 @@ export async function analyzeRelations(client: LlmClient, input: unknown, concep
   onProgress?.({ stage: "relations", completed: 0, total: windows.length });
   let completed = 0;
   const candidates = await mapBatches(windows, options.concurrency, async (window) => {
-    const schema = relationGenerationSchema(window.map((concept) => concept.id));
-    const result = schema.parse(await client.generate({ name: "relation_analysis", instructions: prompts.relations, data: { material: { id: material.id, title: material.title }, concepts: window }, schema }));
+    async function analyze(entries: Concept[]): Promise<{ relations: Relation[] }> {
+      const schema = relationGenerationSchema(entries.map((concept) => concept.id));
+      const request = { name: "relation_analysis", instructions: prompts.relations, data: { material: { id: material.id, title: material.title }, concepts: entries }, schema };
+      async function smaller() {
+        const parts: Concept[][] = [];
+        if (entries.length <= 4) {
+          for (let left = 0; left < entries.length; left++) for (let right = left + 1; right < entries.length; right++) parts.push([entries[left], entries[right]]);
+        } else {
+          const groups: Concept[][] = [];
+          for (let index = 0; index < entries.length; index += 2) groups.push(entries.slice(index, index + 2));
+          for (let left = 0; left < groups.length; left++) for (let right = left + 1; right < groups.length; right++) parts.push([...groups[left], ...groups[right]]);
+        }
+        // Every original pair remains in at least one subwindow, including cross-boundary pairs.
+        const results: Relation[] = [];
+        for (const part of parts) results.push(...(await analyze(part)).relations);
+        return { relations: results };
+      }
+      if (entries.length > 2 && requestCharacters(request) > REQUEST_CHARACTERS) return smaller();
+      try { return schema.parse(await client.generate(request)); }
+      catch (error) {
+        if (!canSplitFailure(error) || entries.length <= 2) throw error;
+        return smaller();
+      }
+    }
+    const result = await analyze(window);
     onProgress?.({ stage: "relations", completed: ++completed, total: windows.length });
     return result;
   });

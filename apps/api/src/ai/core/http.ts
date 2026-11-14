@@ -1,5 +1,6 @@
 import type { GenerationRequest, LlmClient } from "./contracts.ts";
 import { AiError, ensure } from "./errors.ts";
+import { isRecord } from "./schema.ts";
 
 export interface UsageEvent {
   provider: string;
@@ -29,12 +30,13 @@ export interface ProviderAdapter {
   provider: string;
   url: string;
   headers: Record<string, string>;
-  body(request: GenerationRequest<unknown>): unknown;
+  body(request: GenerationRequest<unknown>, contextTokens?: number): unknown;
+  contextRecovery?: { initialTokens: number; maxTokens: number; outputTokens: number };
   output(value: unknown): { text: string; usage: unknown };
 }
 
 export function record(value: unknown): Record<string, unknown> {
-  ensure(typeof value === "object" && value !== null && !Array.isArray(value), "Invalid provider response.", "FORMAT");
+  ensure(isRecord(value), "Invalid provider response.", "FORMAT");
   return value;
 }
 
@@ -77,7 +79,9 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
   const sleep = options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   return {
     async generate<T>(request: GenerationRequest<T>): Promise<T> {
-      const body = JSON.stringify(adapter.body(request));
+      let body = JSON.stringify(adapter.body(request));
+      let contextTokens = adapter.contextRecovery?.initialTokens;
+      let recoveredContext = false;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -95,6 +99,18 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
             const retryable = response.status === 429 || response.status >= 500;
             const delay = retryDelay(response, attempt);
             const provider = await providerDiagnostics(response);
+            const recovery = adapter.contextRecovery;
+            if (response.status === 400 && recovery && !recoveredContext && provider.inputTokens !== undefined && provider.contextTokens !== undefined && attempt < maxAttempts) {
+              const required = Math.max(provider.inputTokens + recovery.outputTokens, (contextTokens ?? recovery.initialTokens) + 1);
+              const expanded = 2 ** Math.ceil(Math.log2(required));
+              if (expanded <= recovery.maxTokens) {
+                recoveredContext = true;
+                contextTokens = expanded;
+                options.onEvent?.({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}`, retryInMs: 0 });
+                body = JSON.stringify(adapter.body(request, expanded));
+                continue;
+              }
+            }
             if (retryable && attempt < maxAttempts && delay <= 60000) {
               options.onEvent?.({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}`, retryInMs: delay });
               clearTimeout(timer);
@@ -106,7 +122,12 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
               ? ` Input uses ${provider.inputTokens} tokens but the active context is ${provider.contextTokens}. Increase OLLAMA_CONTEXT_LENGTH or reduce AI_BATCH_CHARACTERS.`
               : response.status === 503 ? " The provider is temporarily unavailable; retry later or select another model."
               : response.status === 429 ? " Check the provider's request/token quota and retry later." : "";
-            throw new AiError("PROVIDER", `LLM request failed (HTTP ${response.status}${provider.providerStatus ? `, ${provider.providerStatus}` : ""}).${guidance}`);
+            const reason = provider.inputTokens !== undefined ? "CONTEXT_LIMIT"
+              : response.status === 429 ? "RATE_LIMIT"
+              : [401, 403].includes(response.status) ? "AUTH"
+              : response.status === 404 ? "MODEL_NOT_FOUND"
+              : response.status >= 500 ? "UNAVAILABLE" : undefined;
+            throw new AiError("PROVIDER", `LLM request failed (HTTP ${response.status}${provider.providerStatus ? `, ${provider.providerStatus}` : ""}).${guidance}`, reason);
           }
           const responseBody = await response.text();
           phase = "validation";
@@ -124,11 +145,15 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
             controller.signal.aborted ? "TIMEOUT" : "CONNECTION",
             controller.signal.aborted ? `LLM request timed out after ${timeoutMs} ms while waiting for response ${phase}. Adjust AI_TIMEOUT_MS or reduce AI_BATCH_CHARACTERS.` : "Could not read the LLM response.",
           );
-          const canRetry = (failure.code === "TIMEOUT" || failure.code === "CONNECTION") && attempt < Math.min(maxAttempts, 2);
-          const delay = 2000 + Math.floor(Math.random() * 1000);
+          const formatRetry = failure.code === "FORMAT";
+          const canRetry = (formatRetry || failure.code === "TIMEOUT" || failure.code === "CONNECTION") && attempt < Math.min(maxAttempts, 2);
+          const delay = formatRetry ? 0 : 2000 + Math.floor(Math.random() * 1000);
           options.onEvent?.({ ...event, ...diagnostics(), error: failure.code, ...(canRetry ? { retryInMs: delay } : {}) });
           if (canRetry) {
             clearTimeout(timer);
+            if (formatRetry) body = JSON.stringify(adapter.body({ ...request,
+              instructions: `${request.instructions}\nThe previous response did not match the required JSON schema. Return a complete JSON object satisfying every field, type, enum and length constraint, without markdown or extra fields.`,
+            }, contextTokens));
             await sleep(delay);
             continue;
           }

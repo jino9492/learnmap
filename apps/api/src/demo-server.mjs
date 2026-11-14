@@ -43,7 +43,7 @@ function text(value, name) {
 }
 
 function errorInfo(error) {
-  if (error instanceof AiError) return { code: error.code, message: error.message };
+  if (error instanceof AiError) return { code: error.code, message: error.message, ...(error.reason ? { reason: error.reason } : {}) };
   if (error instanceof HttpError) return { code: "INPUT", message: error.message };
   return { code: "INTERNAL", message: "The demo could not complete this operation." };
 }
@@ -291,7 +291,11 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       if (request.method === "GET" && !match[2]) { send(response, 200, snapshot(job)); return; }
       if (request.method !== "POST" || !match[2]) throw new HttpError(405, "Method not allowed.");
       if (job.status !== "ready" || job.busy) throw new HttpError(409, "Wait for the current operation to finish.");
-      if (!job.client) job.client = clientFactory((event) => job.events?.push({ kind: "request", ...event }));
+      if (subject) job.events = subject.events ??= [];
+      if (!job.client) job.client = clientFactory((event) => {
+        job.events?.push({ kind: "request", ...event });
+        if (subject && job.events.length > 200) job.events.splice(0, job.events.length - 200);
+      });
       const input = await jsonBody(request);
       if (job.busy || subject?.busy) throw new HttpError(409, "Wait for the current operation to finish.");
       job.busy = true;
@@ -308,7 +312,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
           let rawEvaluation;
           try { rawEvaluation = await evaluateAnswer(job.client, concept, job.material, stored.question, answer, { concepts: job.concepts, relations: job.relations }); }
           catch (error) {
-            if (submission) { submission.status = "FAILED"; submission.feedback = "평가를 완료하지 못했습니다. 제출한 답안은 보관되며 이해도에는 반영하지 않았습니다."; await workspace.save(); }
+            if (submission) { submission.status = "FAILED"; submission.error = errorInfo(error); submission.feedback = "평가를 완료하지 못했습니다. 제출한 답안은 보관되며 이해도에는 반영하지 않았습니다."; await workspace.save(); }
             throw error;
           }
           const { result: evaluation, report: localization } = await localizeResult(job.client, rawEvaluation, { validate: (value) => evaluationSchema.parse(value) });
@@ -354,7 +358,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exitCode = 1;
   } else {
     const server = createDemoServer({ storagePath: resolve(".learnmap/workspace.json") });
-    server.on("error", (error) => { process.stderr.write(error.code === "EADDRINUSE" ? "Demo port is already in use. Set DEMO_PORT to another port.\n" : "Could not start the demo server.\n"); process.exitCode = 1; });
+    server.on("error", (error) => { process.stderr.write(error.code === "EADDRINUSE" ? `LearnMap 포트 ${port}가 이미 사용 중입니다. 기존 LearnMap 서버가 실행 중이면 http://127.0.0.1:${port}에 접속하거나, 기존 서버를 종료한 뒤 npm start를 실행해 주세요.\n` : "Could not start the demo server.\n"); process.exitCode = 1; });
     server.listen(port, "127.0.0.1", () => process.stdout.write(`LearnMap: http://127.0.0.1:${port}\n`));
   }
 }

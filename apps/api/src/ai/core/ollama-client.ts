@@ -42,14 +42,15 @@ export function createOllamaClient(options: OllamaOptions): LlmClient {
     provider: "ollama",
     url: localEndpoint(options.baseUrl ?? "http://127.0.0.1:11434"),
     headers: {},
-    body(request) {
+    contextRecovery: { initialTokens: contextLength, maxTokens: Math.max(contextLength, 32768), outputTokens: 6000 },
+    body(request, expandedContext) {
       return {
         model: options.model, stream: false, format: request.schema.json,
         messages: [
           { role: "system", content: request.instructions },
           { role: "user", content: JSON.stringify(request.data) },
         ],
-        options: { num_predict: 6000, num_ctx: contextLength },
+        options: { num_predict: 6000, num_ctx: expandedContext ?? contextLength },
       };
     },
     output: responseText,

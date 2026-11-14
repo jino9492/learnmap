@@ -1,6 +1,6 @@
 import type { LlmClient } from "../core/contracts.ts";
 import { ensure } from "../core/errors.ts";
-import { choice, list, object, text } from "../core/schema.ts";
+import { choice, isRecord, list, object, text } from "../core/schema.ts";
 import { safety } from "../core/prompts.ts";
 
 const fields = new Set(["name", "description", "reason", "question", "options", "referenceAnswer", "evaluationCriteria", "feedback", "possibleCause"]);
@@ -54,7 +54,7 @@ function targetsFor(input: unknown): Target[] {
       if (reason) targets.push({ path, reason, value, set });
     } else if (Array.isArray(value)) {
       value.forEach((entry: unknown, index: number) => walk(entry, field, `${path}/${index}`, (replacement) => { value[index] = replacement; }));
-    } else if (typeof value === "object" && value !== null) {
+    } else if (isRecord(value)) {
       for (const [key, entry] of Object.entries<unknown>(value)) {
         if (excluded.has(key)) continue;
         walk(entry, key, `${path}/${key}`, (replacement) => { Reflect.set(value, key, replacement); });

@@ -1,5 +1,9 @@
 import { AiError } from "./errors.ts";
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export interface Schema<T> {
   json: Record<string, unknown>;
   parse(value: unknown): T;
@@ -29,6 +33,14 @@ export const score: Schema<number> = {
     return value;
   },
 };
+
+export function boundedText(maxLength: number): Schema<string> {
+  return { json: { ...text.json, maxLength }, parse(value) {
+    const result = text.parse(value);
+    if (result.length > maxLength) return invalid();
+    return result;
+  } };
+}
 
 export function choice<const T extends string>(...values: T[]): Schema<T> {
   return {
