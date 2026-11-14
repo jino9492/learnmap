@@ -1,5 +1,5 @@
 import { explanationBlocks } from "/explanation.js";
-import { createApiClient, createAnalysisPoller, apiErrorMessage } from "/api.js";
+import { createApiClient, createAnalysisBatchPoller, apiErrorMessage } from "/api.js";
 import { createGraph, statusLabels, statusColors } from "/graph.js";
 import { createAiLoading } from "/loading.js";
 
@@ -238,35 +238,59 @@ $("subject-form").addEventListener("submit", (event) => {
     state.selectedId = null; resetQuestion(); await loadSubject(subject.id); $("subject-form").reset(); $("subject-dialog").close(); location.hash = "map";
   });
 });
-$("material-file").addEventListener("change", () => { $("file-name").textContent = $("material-file").files[0]?.name ?? ""; });
+function showSelectedFiles() {
+  const files = [...$("material-file").files];
+  $("file-name").textContent = files.length ? `${files.length}개 선택 · ${files.map((file) => file.name).join(", ")}` : "";
+}
+$("material-file").addEventListener("change", showSelectedFiles);
 for (const name of ["dragenter", "dragover"]) $("drop-zone").addEventListener(name, (event) => { event.preventDefault(); $("drop-zone").classList.add("dragging"); });
 for (const name of ["dragleave", "drop"]) $("drop-zone").addEventListener(name, (event) => { event.preventDefault(); $("drop-zone").classList.remove("dragging"); });
-$("drop-zone").addEventListener("drop", (event) => { if (event.dataTransfer.files.length) { $("material-file").files = event.dataTransfer.files; $("file-name").textContent = event.dataTransfer.files[0].name; } });
+$("drop-zone").addEventListener("drop", (event) => { if (!$("upload-controls").disabled && event.dataTransfer.files.length) { $("material-file").files = event.dataTransfer.files; showSelectedFiles(); } });
 
 const stages = ["queued", "extracting_text", "extracting_concepts", "organizing_concepts", "analyzing_relations", "localizing", "saving", "ready"];
-const poller = createAnalysisPoller({ request, shouldContinue: (snapshot) => !["ready", "failed"].includes(snapshot.status),
-  onState(snapshot) {
-    $("analysis-status").textContent = materialStatus[snapshot.status] ?? "분석 중";
-    $("analysis-progress").value = Math.max(2, stages.indexOf(snapshot.status) / (stages.length - 1) * 100);
-    if (["ready", "failed"].includes(snapshot.status)) {
+const poller = createAnalysisBatchPoller({ request,
+  onState(snapshots) {
+    const completed = snapshots.filter((snapshot) => ["ready", "failed"].includes(snapshot.status));
+    const active = snapshots.find((snapshot) => !["ready", "failed"].includes(snapshot.status));
+    $("analysis-status").textContent = `${completed.length}/${snapshots.length}개 처리 완료${active ? ` · ${active.filename ?? "자료"} · ${materialStatus[active.status] ?? "분석 중"}` : ""}`;
+    $("analysis-progress").value = snapshots.reduce((sum, snapshot) => sum + (["ready", "failed"].includes(snapshot.status) ? 100 : Math.max(2, stages.indexOf(snapshot.status) / (stages.length - 1) * 100)), 0) / snapshots.length;
+    if (!active) {
       state.analysisId = null; $("analysis-banner").hidden = true; controls();
-      if (snapshot.error) reportError(snapshot.error);
-      else notify(snapshot.warnings?.length ? `분석을 완료했습니다. ${snapshot.warnings.join(' ')}` : snapshot.localization?.warning ?? "분석을 완료했습니다. 개념을 선택해 학습을 시작하세요.");
+      const failures = snapshots.filter((snapshot) => snapshot.status === "failed" || snapshot.error);
+      const warnings = snapshots.flatMap((snapshot) => [...(snapshot.warnings ?? []), ...(snapshot.localization?.warning ? [snapshot.localization.warning] : [])]);
+      notify(`${snapshots.length - failures.length}개 자료 분석 완료${failures.length ? ` · ${failures.length}개 실패` : ""}. ${warnings.join(" ")}`);
+      if (failures.length) reportError({ message: failures.map((snapshot) => `${snapshot.filename ?? "자료"}: ${apiErrorMessage(snapshot.error ?? { code: "INTERNAL" })}`).join("\n") });
       if (state.subject) void loadSubject(state.subject.id).catch(reportError);
     }
   },
   onConnectionError(error, delay) { $("analysis-status").textContent = `연결 재시도 중 · ${delay / 1000}초 후 자동으로 확인합니다.`; },
   onFatalError(error) { state.analysisId = null; $("analysis-banner").hidden = true; controls(); reportError(error); },
 });
-function trackAnalysis(id) { state.analysisId = id; $("analysis-banner").hidden = false; $("analysis-status").textContent = "분석 대기 중"; $("analysis-progress").value = 0; controls(); void poller.start(id); }
+function trackAnalyses(jobs) { state.analysisId = jobs[0].id; $("analysis-banner").hidden = false; $("analysis-status").textContent = `${jobs.length}개 자료 분석 대기 중`; $("analysis-progress").value = 0; controls(); void poller.start(jobs); }
+function trackAnalysis(id) { trackAnalyses([{ id }]); }
 $("reconnect").addEventListener("click", () => void poller.refresh());
 $("upload-form").addEventListener("submit", (event) => {
-  event.preventDefault(); const file = $("material-file").files[0]; if (!file || state.analysisId) return;
-  if (!/\.(pdf|txt|md)$/i.test(file.name) || !file.size || file.size > 20 * 1024 * 1024) { reportError({ code: "INPUT" }); return; }
+  event.preventDefault(); const files = [...$("material-file").files]; if (!files.length || state.analysisId) return;
+  const invalid = files.find((file) => !/\.(pdf|txt|md)$/i.test(file.name) || !file.size || file.size > 20 * 1024 * 1024);
+  if (invalid) { reportError({ message: `${invalid.name}: PDF, TXT, Markdown 형식의 비어 있지 않은 파일을 선택해 주세요. 파일당 최대 20 MiB까지 지원합니다.` }); return; }
   const subjectId = $("upload-subject").value;
+  const mode = $("concept-mode").value;
   void perform("학습 자료를 업로드하고 있습니다.", async () => {
-    const result = await request(`/api/analyses?filename=${encodeURIComponent(file.name)}&mode=${$("concept-mode").value}&subjectId=${subjectId}`, { method: "POST", body: file });
-    await loadSubject(subjectId); $("upload-dialog").close(); $("upload-form").reset(); $("file-name").textContent = ""; location.hash = "map"; trackAnalysis(result.id);
+    const jobs = []; const failures = []; const retry = new DataTransfer();
+    for (const [index, file] of files.entries()) {
+      notify(`자료 업로드 중 · ${index + 1}/${files.length} · ${file.name}`);
+      try {
+        const result = await request(`/api/analyses?filename=${encodeURIComponent(file.name)}&mode=${mode}&subjectId=${subjectId}`, { method: "POST", body: file });
+        jobs.push({ id: result.id, filename: file.name });
+      } catch (error) { failures.push(`${file.name}: ${apiErrorMessage(error)}`); retry.items.add(file); }
+    }
+    if (jobs.length) {
+      if (!failures.length) { $("upload-dialog").close(); $("upload-form").reset(); }
+      $("material-file").files = retry.files; showSelectedFiles(); location.hash = "map";
+      trackAnalyses(jobs);
+      await loadSubject(subjectId);
+    }
+    if (failures.length) reportError({ message: `업로드 실패 · ${failures.join("\n")}` });
   });
 });
 async function reanalyze(id) { await perform("자료를 다시 분석합니다.", async () => { const result = await request(`/api/materials/${id}/analyze`, { method: "POST" }); trackAnalysis(result.id); }); }
@@ -332,7 +356,7 @@ async function initialize() {
   if (!state.subjects.length) { await request("/api/subjects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "운영체제" }) }); await refreshSubjects(); }
   const id = state.subjects.find((subject) => subject.id === remembered())?.id ?? state.subjects[0].id;
   await loadSubject(id); route();
-  const pending = state.subject.materials.find((material) => !["ready", "failed"].includes(material.status));
-  if (pending) trackAnalysis(pending.id);
+  const pending = state.subject.materials.filter((material) => !["ready", "failed"].includes(material.status));
+  if (pending.length) trackAnalyses(pending.map((material) => ({ id: material.id, filename: material.title })));
 }
 void initialize().catch(reportError);

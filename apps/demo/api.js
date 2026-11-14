@@ -32,6 +32,36 @@ export function createApiClient(fetcher = fetch) {
   };
 }
 
+export function createAnalysisBatchPoller({ request, onState, ...options }) {
+  let jobs = [];
+  let completed = new Map();
+  const poller = createAnalysisPoller({
+    ...options,
+    request: async () => {
+      const results = completed;
+      return Promise.all(jobs.map(async (job) => {
+        if (results.has(job.id)) return results.get(job.id);
+        let snapshot;
+        try { snapshot = await request(`/api/analyses/${job.id}`, { cache: "no-store", signal: AbortSignal.timeout(8000) }); }
+        catch (error) {
+          if (!(error.status >= 400 && error.status < 500)) throw error;
+          snapshot = { id: job.id, status: "failed", error };
+        }
+        const result = { ...snapshot, filename: job.filename };
+        if (["ready", "failed"].includes(result.status)) results.set(job.id, result);
+        return result;
+      }));
+    },
+    onState,
+    shouldContinue: (snapshots) => snapshots.some((snapshot) => !["ready", "failed"].includes(snapshot.status)),
+  });
+  return {
+    start(items) { jobs = items; completed = new Map(); return poller.start("batch"); },
+    refresh: poller.refresh,
+    stop: poller.stop,
+  };
+}
+
 export function createAnalysisPoller({ request, onState, onConnectionError, onFatalError, shouldContinue, schedule = setTimeout, cancel = clearTimeout }) {
   let id;
   let version = 0;

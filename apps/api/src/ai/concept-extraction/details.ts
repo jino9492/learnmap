@@ -1,32 +1,19 @@
 import type { AnalysisProgress, Citation, Concept, LlmClient, Material } from "../core/contracts.ts";
 import type { BatchOptions } from "../core/batches.ts";
 import { mapBatches } from "../core/batches.ts";
-import { AiError, ensure } from "../core/errors.ts";
+import { AiError } from "../core/errors.ts";
 import { object, text } from "../core/schema.ts";
 import { prompts } from "../core/prompts.ts";
 import { partitionRequests, runPartition } from "../core/partition.ts";
 import { conceptCitations } from "../../features/material-analysis/index.ts";
 
-export function isDetailedExplanation(value: string): boolean {
-  const paragraphs = value.trim().split(/\n\s*\n/).filter((paragraph) => paragraph.trim().length >= 60);
-  const normalized = paragraphs.map((paragraph) => paragraph.replace(/\s/g, ""));
-  return value.trim().length >= 600 && paragraphs.length >= 4 && new Set(normalized).size === normalized.length;
-}
-
-const explanationSchema = object({ description: {
-  json: { ...text.json, minLength: 600, maxLength: 9000 },
-  parse(value: unknown) {
-    const description = text.parse(value);
-    ensure(description.length <= 9000 && isDetailedExplanation(description),
-      "상세 설명은 서로 다른 내용을 설명하는 4개 이상의 문단과 600자 이상의 본문이 필요합니다. 요약이나 반복 문장은 저장하지 않습니다.", "FORMAT");
-    return description;
-  },
-} });
+// Depth is guided by the prompt. Validate only the shared response structure.
+const explanationSchema = object({ description: text });
 
 // Extraction identifies learning objectives. Writing a lesson is a separate,
 // focused request so many concepts cannot compete for the same output budget.
 export async function expandConceptDetails(client: LlmClient, concepts: Concept[], material: Material,
-  onProgress?: (progress: AnalysisProgress) => void, options: BatchOptions & { force?: boolean } = {}): Promise<Concept[]> {
+  onProgress?: (progress: AnalysisProgress) => void, options: BatchOptions = {}): Promise<Concept[]> {
   const result = structuredClone(concepts);
   const tasks: { concept: Concept; details: NonNullable<Concept["details"]> }[] = [];
   for (const concept of result) {
@@ -40,7 +27,7 @@ export async function expandConceptDetails(client: LlmClient, concepts: Concept[
       group.push(detail); groups.set(key, group);
     }
     for (const entries of groups.values()) {
-      if (options.force || !isDetailedExplanation(entries[0].description)) tasks.push({ concept, details: entries });
+      tasks.push({ concept, details: entries });
     }
   }
   let completed = 0;
@@ -67,6 +54,11 @@ export async function expandConceptDetails(client: LlmClient, concepts: Concept[
           }
         }
         throw new AiError("FORMAT", "상세 설명 작성을 완료하지 못했습니다.");
+      }, (_sources, error) => {
+        if (!(error instanceof AiError) || error.code !== "FORMAT") throw error;
+        onProgress?.({ stage: "concepts", completed, total: tasks.length, warning: true,
+          detail: "일부 상세 설명의 응답 형식을 읽지 못해 기존 개념 설명을 유지했습니다. 분석은 계속 진행합니다." });
+        return { description: details[0].description };
       }));
     }
     // Each partition remains a separate lesson section to avoid truncating or

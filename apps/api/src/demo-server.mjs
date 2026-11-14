@@ -9,7 +9,7 @@ import { loadMaterialBytes } from "./features/materials/index.mjs";
 import { createAnalysisCache, analysisCacheScope } from "./features/material-analysis/cache.mjs";
 import { measureAnalysisStage } from "./features/material-analysis/timing.mjs";
 import { validateGraph } from "./features/knowledge-graph/index.ts";
-import { expandConceptDetails, isDetailedExplanation } from "./ai/concept-extraction/details.ts";
+import { expandConceptDetails } from "./ai/concept-extraction/details.ts";
 import { mapBatches } from "./ai/core/batches.ts";
 import { questionTargets, validateQuestion } from "./ai/question-generation/index.ts";
 import { conceptCollectionSchema, relationCollectionSchema, evaluationSchema, recommendationSchema } from "./ai/core/schemas.ts";
@@ -133,9 +133,6 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         conceptCollectionSchema.parse({ concepts: value.graph.concepts });
         relationCollectionSchema.parse({ relations: value.graph.relations });
         validateGraph(value.graph);
-        if (!value.graph.concepts.every((concept) => concept.details?.every((detail) => isDetailedExplanation(detail.description)))) {
-          throw new AiError("FORMAT", "상세 설명을 축소해서 저장할 수 없습니다.");
-        }
         if (value.detailedConcepts) conceptCollectionSchema.parse({ concepts: value.detailedConcepts });
       } }), report);
       job.concepts = localized.result.graph.concepts;
@@ -355,11 +352,10 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
               topic: entry.target.name, question: publicQuestion(entry.question), localization: { status: entry.localization.status, detected: entry.localization.detected, translated: entry.localization.translated, warning: entry.localization.warning } }));
             send(response, 200, { ...questions[0], setId, total: questions.length, questions });
           } else if (match[2] === "details") {
-            const [expanded] = await expandConceptDetails(job.client, [concept], job.material, undefined, { ...analysisOptionsFromEnv(env), force: true });
+            const [expanded] = await expandConceptDetails(job.client, [concept], job.material, undefined, analysisOptionsFromEnv(env));
             const { result: localized, report: localization } = await localizeResult(job.client, expanded, {
               validate: (value) => {
                 conceptCollectionSchema.parse({ concepts: [value] });
-                if (!value.details?.every((detail) => isDetailedExplanation(detail.description))) throw new AiError("FORMAT", "상세 설명이 요약으로 축소되었습니다.");
               },
             });
             if (subject) {

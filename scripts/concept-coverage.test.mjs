@@ -5,13 +5,15 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, basename, resolve } from 'node:path';
 import { extractConcepts, organizeConcepts } from '../apps/api/src/ai/index.ts';
-import { expandConceptDetails, isDetailedExplanation } from '../apps/api/src/ai/concept-extraction/details.ts';
+import { expandConceptDetails } from '../apps/api/src/ai/concept-extraction/details.ts';
+import { AiError } from '../apps/api/src/ai/core/errors.ts';
 import { explanationBlocks } from '../apps/web/explanation.js';
 import { questionTargets } from '../apps/api/src/ai/question-generation/index.ts';
 import { createWorkspace, combineSubject, learningProgress, conceptContentKey } from '../apps/api/src/features/workspace/index.mjs';
 import { createDemoServer } from '../apps/api/src/demo-server.mjs';
 
 const lesson = JSON.parse(await readFile(new URL('../examples/fixture.json', import.meta.url), 'utf8')).concept_detail_expansion.description;
+const hasExplanation = (value) => typeof value === 'string' && Boolean(value.trim());
 
 const details = ['정의', '작동 원리', '예외 조건'].map((name, index) => ({
   name, description: `${name}에 관한 자세한 설명입니다.`, sourceLocation: 'page:1', evidence: `${index + 1}번째 학습 범위의 원문입니다.`,
@@ -141,20 +143,21 @@ test('question sets grade cumulatively, survive restart, reject duplicate and su
     expectedPathScore = 100;
     await post('path', { conceptId: 'c1' });
     const expanded = await post('details', { conceptId: 'c1' });
-    assert.ok(expanded.concept.details.every((detail) => isDetailedExplanation(detail.description)));
+    assert.ok(expanded.concept.details.every((detail) => hasExplanation(detail.description)));
     await stop(); await start();
-    assert.ok((await (await fetch(base)).json()).graph.concepts[0].details.every((detail) => isDetailedExplanation(detail.description)));
+    assert.ok((await (await fetch(base)).json()).graph.concepts[0].details.every((detail) => hasExplanation(detail.description)));
     assert.equal((await (await fetch(base)).json()).progress[0].score, 100);
     const subjectBase = base.replace(id, subjectId);
     const conceptId = `${id}:c1`;
     base = subjectBase;
     await post('details', { conceptId });
     failExpansion = true;
-    await post('details', { conceptId }, 502);
+    const compact = await post('details', { conceptId });
+    assert.ok(compact.concept.details.every((detail) => detail.description === '짧은 요약'));
     failExpansion = false;
     await stop(); await start();
     const savedSubject = await (await fetch(base.replace(id, subjectId))).json();
-    assert.ok(savedSubject.graph.concepts[0].details.every((detail) => isDetailedExplanation(detail.description)));
+    assert.ok(savedSubject.graph.concepts[0].details.every((detail) => detail.description === '짧은 요약'));
     const stored = JSON.parse(await readFile(storagePath, 'utf8'));
     assert.ok(stored.subjects[0].detailOverrides[conceptId].signature);
 
@@ -166,41 +169,52 @@ test('question sets grade cumulatively, survive restart, reject duplicate and su
   }
 });
 
-test('short or missing detail descriptions are expanded separately, with bounded retries and preserved sources', async () => {
-  assert.ok(isDetailedExplanation(lesson));
-  assert.equal(isDetailedExplanation('한두 줄 요약입니다.'), false);
-  assert.equal(isDetailedExplanation(Array(4).fill('똑같은 문장입니다. '.repeat(20)).join('\n\n')), false);
+test('explanation depth is prompt-guided and compact answers preserve sources without quality retries', async () => {
   const calls = [];
   const original = structuredClone(concept);
   const expanded = await expandConceptDetails({ async generate(request) {
     calls.push(request);
-    if (calls.length === 1) return { description: '이것은 너무 짧은 답변입니다.' };
-    return { description: lesson };
+    return { description: '개념의 의미를 간결하게 설명합니다.' };
   } }, [concept], material, undefined, { concurrency: 1 });
-  assert.equal(calls.length, 4);
-  assert.ok(calls[1].data.correction);
+  assert.equal(calls.length, details.length);
+  assert.ok(calls.every((call) => !call.data.correction));
+  assert.match(calls[0].instructions, /topic's complexity/);
+  assert.match(calls[0].instructions, /silently review/);
+  assert.equal(calls[0].schema.json.properties.description.minLength, 1);
   assert.equal(expanded[0].description, concept.description);
   assert.deepEqual(expanded[0].details.map((detail) => detail.evidence), details.map((detail) => detail.evidence));
-  assert.ok(expanded[0].details.every((detail) => isDetailedExplanation(detail.description)));
-  assert.deepEqual(concept, original);
-  let attempts = 0;
-  await assert.rejects(expandConceptDetails({ async generate() { attempts++; return { description: '짧은 요약' }; } }, [concept], material), { code: 'FORMAT' });
-  assert.equal(attempts, 3);
+  assert.ok(expanded[0].details.every((detail) => detail.description === '개념의 의미를 간결하게 설명합니다.'));
   assert.deepEqual(concept, original);
 });
 
-test('already detailed lessons are retained unless explicitly regenerated, and legacy summaries are never used as full lessons', async () => {
+test('explanations regenerate without using length to classify existing or legacy descriptions', async () => {
   const rich = { ...concept, details: [{ ...details[0], description: lesson }] };
-  const never = { generate() { assert.fail('Already detailed explanation should be retained'); } };
-  assert.deepEqual(await expandConceptDetails(never, [rich], material), [rich]);
   let calls = 0;
-  const client = { async generate() { calls++; return { description: lesson }; } };
-  await expandConceptDetails(client, [rich], material, undefined, { force: true });
+  const client = { async generate() { calls++; return { description: '새로운 설명입니다.' }; } };
+  const [regenerated] = await expandConceptDetails(client, [rich], material);
   assert.equal(calls, 1);
+  assert.equal(regenerated.details[0].description, '새로운 설명입니다.');
   const { details: omitted, ...legacy } = concept;
   const [expanded] = await expandConceptDetails(client, [legacy], material);
-  assert.ok(isDetailedExplanation(expanded.details[0].description));
+  assert.equal(expanded.details[0].description, '새로운 설명입니다.');
   assert.notEqual(expanded.details[0].description, legacy.description);
+});
+
+test('unreadable detail responses retain the existing explanation and continue remaining topics', async () => {
+  const events = []; let attempts = 0;
+  const [expanded] = await expandConceptDetails({ async generate(request) {
+    attempts++;
+    return request.data.topic === details[0].name ? { description: '' } : { description: '생성된 설명' };
+  } }, [concept], material, (event) => events.push(event), { concurrency: 1 });
+  assert.equal(attempts, 5);
+  assert.equal(expanded.details[0].description, details[0].description);
+  assert.ok(expanded.details.slice(1).every((detail) => detail.description === '생성된 설명'));
+  assert.ok(events.some((event) => event.warning));
+  assert.equal(events.at(-1).completed, details.length);
+  assert.deepEqual(expanded.details.map((detail) => detail.evidence), details.map((detail) => detail.evidence));
+  await assert.rejects(expandConceptDetails({ async generate() {
+    throw new AiError('CONNECTION', '모델 연결 실패');
+  } }, [concept], material), { code: 'CONNECTION' });
 });
 
 test('regenerated subject lessons apply only while their original sources match', () => {
