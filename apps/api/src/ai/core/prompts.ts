@@ -72,6 +72,8 @@ Return only strong, supported candidates, at most 30 relations. An empty list is
 Never create self-links, duplicate relations or prerequisite cycles.`,
   question: `${safety}
 Task: Generate one question of the requested type and difficulty, grounded in the supplied source and concept.
+If regeneration is supplied, the previous candidate failed validation. Generate a fresh question that avoids
+the reported previousFailure, while preserving the requested type and difficulty and all quality requirements.
 If additional sources are provided, use them together to assess the whole conceptual unit, not only its first excerpt.
 Include referenceAnswer and 1-6 concrete evaluationCriteria. Each criterion must describe an observable required
 answer element for THIS question. Do not list learner levels, grading bands or labels such as expert/intermediate/beginner/none.
