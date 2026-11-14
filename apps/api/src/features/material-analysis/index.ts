@@ -8,7 +8,7 @@ export function conceptSummary(concept: Concept): Concept {
 }
 
 export function conceptCitations(concept: Concept, material: Material): Citation[] {
-  const citations = [{ sourceLocation: concept.sourceLocation, evidence: concept.evidence }, ...(concept.citations ?? [])];
+  const citations = [{ sourceLocation: concept.sourceLocation, evidence: concept.evidence }, ...(concept.citations ?? []), ...(concept.details ?? []).map(({ sourceLocation, evidence }) => ({ sourceLocation, evidence }))];
   const unique = new Map<string, Citation>();
   for (const citation of citations) {
     ensure(material.sources.some((source) => source.location === citation.sourceLocation && source.text.includes(citation.evidence)), "Concept citation is not grounded in this material.", "INPUT");

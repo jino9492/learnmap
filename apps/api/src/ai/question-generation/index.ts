@@ -69,3 +69,40 @@ export function publicQuestion(question: Question) {
   const { type, question: prompt, options } = validateQuestion(question);
   return { type, question: prompt, options };
 }
+
+// One focused question per assessable detail; long detail evidence is divided
+// without truncation. Repeated excerpts are tested once within the same subtopic.
+export function questionTargets(concept: Concept, material: Material): Concept[] {
+  const citations = conceptCitations(concept, material);
+  const groups = new Map<string, { name: string; description: string; citations: typeof citations }>();
+  for (const detail of concept.details ?? [{ ...concept }]) {
+    const key = JSON.stringify([detail.name, detail.description]);
+    const group = groups.get(key) ?? { name: detail.name, description: detail.description, citations: [] };
+    group.citations.push({ sourceLocation: detail.sourceLocation, evidence: detail.evidence });
+    groups.set(key, group);
+  }
+  // Older graphs can have multiple citations without detailed sections.
+  const represented = new Set([...groups.values()].flatMap((group) => group.citations.map((citation) => JSON.stringify(citation))));
+  const remaining = citations.filter((citation) => !represented.has(JSON.stringify(citation)));
+  if (remaining.length) groups.set("additional", { name: concept.name, description: concept.description, citations: remaining });
+  const targets: Concept[] = [];
+  for (const group of groups.values()) {
+    let batch: typeof citations = [];
+    let size = 0;
+    const flush = () => {
+      if (!batch.length) return;
+      targets.push({ id: concept.id, name: `${concept.name} · ${group.name}`, description: concept.description,
+        sourceLocation: batch[0].sourceLocation, evidence: batch[0].evidence, citations: batch });
+      batch = []; size = 0;
+    };
+    for (const citation of new Map(group.citations.map((citation) => [JSON.stringify(citation), citation])).values()) {
+      for (let offset = 0; offset < citation.evidence.length; offset += 1600) {
+        const evidence = citation.evidence.slice(offset, offset + 1600);
+        if (size + evidence.length > 1800) flush();
+        batch.push({ ...citation, evidence }); size += evidence.length;
+      }
+    }
+    flush();
+  }
+  return targets;
+}

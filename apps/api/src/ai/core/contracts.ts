@@ -30,12 +30,20 @@ export interface Material {
   sources: Source[];
 }
 
+export interface ConceptDetail {
+  name: string;
+  description: string;
+  sourceLocation: string;
+  evidence: string;
+}
+
 export interface Concept {
   id: string;
   name: string;
   description: string;
   sourceLocation: string;
   evidence: string;
+  details?: ConceptDetail[];
   memberConceptIds?: string[];
   citations?: Citation[];
 }

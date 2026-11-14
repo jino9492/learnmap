@@ -1,4 +1,5 @@
 const messages = {
+  details: "원문을 바탕으로 세부 개념을 자세히 설명하고 있어요",
   questions: "학습 자료를 바탕으로 문제를 생성하고 있어요",
   evaluations: "답안의 개념 이해도를 분석하고 있어요",
   path: "맞춤 학습 경로를 만들고 있어요",

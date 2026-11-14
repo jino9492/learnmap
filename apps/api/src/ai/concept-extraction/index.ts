@@ -52,11 +52,28 @@ export async function extractConcepts(client: LlmClient, input: unknown, onProgr
       try {
         const result = schema.parse(await client.generate(request));
         ensure(new Set(result.concepts.map((concept) => concept.id)).size === result.concepts.length, "Duplicate concept IDs.");
-        return result.concepts.map((concept) => {
+        const concepts = result.concepts.map((concept) => {
           const quote = catalog.quotes.get(concept.evidence);
           ensure(quote, `Batch ${index + 1}/${batches.length}: unknown evidence ID for ${concept.id}.`);
-          return { ...concept, id: `${prefix}${concept.id}`, sourceLocation: quote.sourceLocation, evidence: quote.text };
+          const details = (concept.details ?? [{ name: concept.name, description: concept.description, evidenceIds: [concept.evidence] }]).flatMap((detail) => [...new Set(detail.evidenceIds)].map((id) => {
+            const source = catalog.quotes.get(id)!;
+            return { name: detail.name, description: detail.description, sourceLocation: source.sourceLocation, evidence: source.text };
+          }));
+          return { id: `${prefix}${concept.id}`, name: concept.name, description: concept.description,
+            sourceLocation: quote.sourceLocation, evidence: quote.text, details,
+            citations: details.map(({ sourceLocation, evidence }) => ({ sourceLocation, evidence })) };
         });
+        // Preserve omitted excerpts as explicitly labeled supplementary source material.
+        const covered = new Set(concepts.flatMap((concept) => [JSON.stringify([concept.sourceLocation, concept.evidence]), ...concept.details.map((detail) => JSON.stringify([detail.sourceLocation, detail.evidence]))]));
+        for (const quote of catalog.quotes.values()) {
+          if (covered.has(JSON.stringify([quote.sourceLocation, quote.text]))) continue;
+          const target = concepts.filter((concept) => concept.sourceLocation === quote.sourceLocation).at(-1);
+          if (!target) continue;
+          const citation = { sourceLocation: quote.sourceLocation, evidence: quote.text };
+          target.citations.push(citation);
+          target.details.push({ ...citation, name: "같은 원문 구간의 보충 내용", description: "개념 설명과 함께 확인할 원문입니다. 아래 원문 근거를 참고하세요." });
+        }
+        return concepts;
       } catch (error) {
         if (!canSplitFailure(error) || !split() || depth >= 6) throw error;
         return smaller();

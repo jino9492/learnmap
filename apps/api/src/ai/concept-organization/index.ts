@@ -68,7 +68,8 @@ export async function organizeConcepts(client: LlmClient, input: unknown, detail
         const primary = sources[0];
         ensure(primary, "Organized concept has no grounded citation.");
         next.push({ id: `r${round}:b${index + 1}:g${next.length + 1}`, name: group.name, description: group.description,
-          sourceLocation: primary.sourceLocation, evidence: primary.evidence, memberConceptIds: memberIds, citations: sources });
+          sourceLocation: primary.sourceLocation, evidence: primary.evidence, memberConceptIds: memberIds, citations: sources,
+          details: memberIds.flatMap((id) => { const member = original.get(id)!; return member.details ?? [{ name: member.name, description: member.description, sourceLocation: member.sourceLocation, evidence: member.evidence }]; }) });
       }
       // Incomplete model output must not silently remove learning objectives.
       if (result.groups.length) next.push(...batch.filter((concept) => !assigned.has(concept.id)));

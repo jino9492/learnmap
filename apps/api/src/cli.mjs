@@ -1,3 +1,4 @@
+import { expandConceptDetails } from "./ai/concept-extraction/details.ts";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
@@ -60,7 +61,7 @@ async function main() {
   stderr.write("Extracting concepts...\n");
   const reportProgress = ({ stage, completed, total, detail }) => stderr.write(`${stage}: ${completed}/${total} batches${detail ? ` (${detail})` : ""}\n`);
   const options = analysisOptionsFromEnv(isDemo ? { AI_CONCURRENCY: "1" } : process.env);
-  const detailedConcepts = await measureAnalysisStage("concepts", () => extractConcepts(client, material, reportProgress, options), reportTiming);
+  const detailedConcepts = await measureAnalysisStage("concepts", async () => expandConceptDetails(client, await extractConcepts(client, material, reportProgress, options), material, reportProgress, options), reportTiming);
   const initialConcepts = mode === "conceptual" ? await measureAnalysisStage("organization", () => organizeConcepts(client, material, detailedConcepts, reportProgress, options), reportTiming) : detailedConcepts;
   stderr.write("Analyzing relations...\n");
   const initialRelations = await measureAnalysisStage("relations", () => analyzeRelations(client, material, initialConcepts, reportProgress, options), reportTiming);

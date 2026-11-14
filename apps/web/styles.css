@@ -1537,3 +1537,16 @@ dialog label+label{
   }
 }
 
+
+.concept-content { max-width: 960px; margin: 0 auto; padding-bottom: 48px; }
+.concept-section { margin-top: 24px; padding: 28px; }
+.concept-section h2 { font-size: 20px; margin: 0 0 18px; }
+.concept-prose { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; }
+.concept-section blockquote { margin: 16px 0; padding: 16px; background: #f4f7fb; border-left: 3px solid #5976d9; }
+.concept-section summary { cursor: pointer; }
+.concept-summary { line-height: 1.8; margin-bottom: 24px; }
+.detail-link { display: block; text-align: center; margin-top: 12px; text-decoration: none; }
+
+.lesson-body .lesson-heading { margin: 28px 0 10px; font-size: 17px; line-height: 1.5; }
+.lesson-body .concept-prose { margin: 0 0 20px; }
+.lesson-code { overflow-x: auto; padding: 18px; background: #f4f7fb; border-radius: 10px; line-height: 1.7; }

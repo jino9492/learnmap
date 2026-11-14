@@ -3,13 +3,15 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { createWorkspace, combineSubject, learningProgress } from "./features/workspace/index.mjs";
+import { createWorkspace, combineSubject, learningProgress, conceptContentKey } from "./features/workspace/index.mjs";
 import { createConfiguredClient, analysisOptionsFromEnv, extractConcepts, organizeConcepts, analyzeRelations, generateQuestion, publicQuestion, evaluateAnswer, recommendPath, localizeResult, AiError } from "./ai/index.ts";
 import { loadMaterialBytes } from "./features/materials/index.mjs";
 import { createAnalysisCache, analysisCacheScope } from "./features/material-analysis/cache.mjs";
 import { measureAnalysisStage } from "./features/material-analysis/timing.mjs";
 import { validateGraph } from "./features/knowledge-graph/index.ts";
-import { validateQuestion } from "./ai/question-generation/index.ts";
+import { expandConceptDetails, isDetailedExplanation } from "./ai/concept-extraction/details.ts";
+import { mapBatches } from "./ai/core/batches.ts";
+import { questionTargets, validateQuestion } from "./ai/question-generation/index.ts";
 import { conceptCollectionSchema, relationCollectionSchema, evaluationSchema, recommendationSchema } from "./ai/core/schemas.ts";
 
 class HttpError extends Error {
@@ -62,6 +64,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
     ["/", { url: new URL("../../web/index.html", import.meta.url), type: "text/html; charset=utf-8" }],
     ["/demo", { url: new URL("../../demo/index.html", import.meta.url), type: "text/html; charset=utf-8" }],
     ["/web.js", { url: new URL("../../web/app.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
+    ["/explanation.js", { url: new URL("../../web/explanation.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
     ["/graph.js", { url: new URL("../../web/graph.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
     ["/styles.css", { url: new URL("../../web/styles.css", import.meta.url), type: "text/css; charset=utf-8" }],
     ["/assets/avatar.svg", { url: new URL("../../web/assets/avatar.svg", import.meta.url), type: "image/svg+xml" }],
@@ -111,7 +114,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       job.client = clientFactory((event) => job.events.push({ kind: "request", ...event }));
       const progress = (event) => job.events.push({ kind: "progress", ...event });
       job.status = "extracting_concepts";
-      job.detailedConcepts = await stage("concepts", job.material, () => extractConcepts(job.client, job.material, progress, options));
+      job.detailedConcepts = await stage("concepts", job.material, async () => expandConceptDetails(job.client, await extractConcepts(job.client, job.material, progress, options), job.material, progress, options));
       job.concepts = job.detailedConcepts;
       if (job.mode === "conceptual") {
         job.status = "organizing_concepts";
@@ -130,6 +133,9 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         conceptCollectionSchema.parse({ concepts: value.graph.concepts });
         relationCollectionSchema.parse({ relations: value.graph.relations });
         validateGraph(value.graph);
+        if (!value.graph.concepts.every((concept) => concept.details?.every((detail) => isDetailedExplanation(detail.description)))) {
+          throw new AiError("FORMAT", "상세 설명을 축소해서 저장할 수 없습니다.");
+        }
         if (value.detailedConcepts) conceptCollectionSchema.parse({ concepts: value.detailedConcepts });
       } }), report);
       job.concepts = localized.result.graph.concepts;
@@ -285,7 +291,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         void analyze(job, name, bytes).catch(() => { process.stderr.write("Could not save analysis.\n"); });
         return;
       }
-      const match = /^\/api\/analyses\/([a-f0-9-]+)(?:\/(questions|evaluations|path))?$/.exec(url.pathname);
+      const match = /^\/api\/analyses\/([a-f0-9-]+)(?:\/(questions|evaluations|path|details))?$/.exec(url.pathname);
       if (!match) throw new HttpError(404, "Not found.");
       const subject = subjects.get(match[1]);
       const job = subject ? combineSubject(subject, analyses) : analyses.get(match[1]);
@@ -306,13 +312,14 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         if (match[2] === "evaluations") {
           const stored = job.questions.get(text(input.questionId, "question ID"));
           if (!stored) throw new HttpError(400, "Unknown question ID.");
+          if (stored.superseded) throw new HttpError(409, "새 문제 묶음이 생성되었습니다. 최신 문제를 풀어 주세요.");
           if (stored.evaluated) throw new HttpError(409, "이미 평가한 문제입니다. 새 문제를 생성해 주세요.");
           const concept = job.concepts.find((concept) => concept.id === stored.conceptId);
           const answer = text(input.answer, "answer");
           const submission = subject ? { id: randomUUID(), conceptId: concept.id, conceptName: concept.name, question: stored.question.question, answer, status: "PENDING", createdAt: new Date().toISOString() } : null;
           if (submission) { subject.history.push(submission); await workspace.save(); }
           let rawEvaluation;
-          try { rawEvaluation = await evaluateAnswer(job.client, concept, job.material, stored.question, answer, { concepts: job.concepts, relations: job.relations }); }
+          try { rawEvaluation = await evaluateAnswer(job.client, stored.target ?? concept, job.material, stored.question, answer, { concepts: job.concepts, relations: job.relations }); }
           catch (error) {
             if (submission) { submission.status = "FAILED"; submission.error = errorInfo(error); submission.feedback = "평가를 완료하지 못했습니다. 제출한 답안은 보관되며 이해도에는 반영하지 않았습니다."; await workspace.save(); }
             throw error;
@@ -320,24 +327,49 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
           const { result: evaluation, report: localization } = await localizeResult(job.client, rawEvaluation, { validate: (value) => evaluationSchema.parse(value) });
           const history = job.progress.get(concept.id) ?? { conceptId: concept.id, scores: [], recentMistakes: [] };
           history.scores = [...history.scores, evaluation.score].slice(-100);
+          if (stored.setId) {
+            if (history.assessment?.id !== stored.setId) history.assessment = { id: stored.setId, total: stored.total, scores: {} };
+            history.assessment.scores[input.questionId] = evaluation.score;
+          }
           history.recentMistakes = evaluation.weakPoints.map((id) => `${id}: ${evaluation.feedback}`.slice(0, 2000));
           job.progress.set(concept.id, history);
           stored.evaluated = true;
           if (submission) Object.assign(submission, evaluation, { status: "EVALUATED" });
           await workspace.save();
-          send(response, 200, { evaluation, localization });
+          send(response, 200, { evaluation, progress: learningProgress(history), localization });
         } else {
           const concept = job.concepts.find((concept) => concept.id === text(input.conceptId, "concept ID"));
           if (!concept) throw new HttpError(400, "Unknown concept ID.");
           if (match[2] === "questions") {
-            const rawQuestion = await generateQuestion(job.client, concept, job.material, input.type ?? "SHORT_ANSWER", input.difficulty ?? "MEDIUM");
-            const { result: question, report: localization } = await localizeResult(job.client, rawQuestion, { validate: validateQuestion });
-            const id = randomUUID();
-            job.questions.set(id, { conceptId: concept.id, question });
+            const targets = questionTargets(concept, job.material);
+            const setId = randomUUID();
+            const generated = await mapBatches(targets, analysisOptionsFromEnv(env).concurrency, async (target) => {
+              const rawQuestion = await generateQuestion(job.client, target, job.material, input.type ?? "SHORT_ANSWER", input.difficulty ?? "MEDIUM");
+              const { result: question, report: localization } = await localizeResult(job.client, rawQuestion, { validate: validateQuestion });
+              return { id: randomUUID(), target, question, localization };
+            });
+            for (const stored of job.questions.values()) if (stored.conceptId === concept.id) stored.superseded = true;
+            for (const entry of generated) job.questions.set(entry.id, { conceptId: concept.id, question: entry.question, target: entry.target, setId, total: generated.length });
             await workspace.save();
-            send(response, 200, { questionId: id, conceptId: concept.id, question: publicQuestion(question), localization: { status: localization.status, detected: localization.detected, translated: localization.translated, warning: localization.warning } });
+            const questions = generated.map((entry) => ({ questionId: entry.id, conceptId: concept.id,
+              topic: entry.target.name, question: publicQuestion(entry.question), localization: { status: entry.localization.status, detected: entry.localization.detected, translated: entry.localization.translated, warning: entry.localization.warning } }));
+            send(response, 200, { ...questions[0], setId, total: questions.length, questions });
+          } else if (match[2] === "details") {
+            const [expanded] = await expandConceptDetails(job.client, [concept], job.material, undefined, { ...analysisOptionsFromEnv(env), force: true });
+            const { result: localized, report: localization } = await localizeResult(job.client, expanded, {
+              validate: (value) => {
+                conceptCollectionSchema.parse({ concepts: [value] });
+                if (!value.details?.every((detail) => isDetailedExplanation(detail.description))) throw new AiError("FORMAT", "상세 설명이 요약으로 축소되었습니다.");
+              },
+            });
+            if (subject) {
+              subject.detailOverrides ??= {};
+              subject.detailOverrides[concept.id] = { signature: conceptContentKey(concept), details: localized.details };
+            } else concept.details = localized.details;
+            await workspace.save();
+            send(response, 200, { concept: localized, localization });
           } else {
-            const rawPath = await recommendPath(job.client, { concepts: job.concepts, relations: job.relations }, concept.id, [...job.progress.values()]);
+            const rawPath = await recommendPath(job.client, { concepts: job.concepts, relations: job.relations }, concept.id, [...job.progress.values()].map((history) => ({ conceptId: history.conceptId, scores: [learningProgress(history).score], recentMistakes: history.recentMistakes })));
             const { result: path, report: localization } = await localizeResult(job.client, rawPath, { validate: (value) => recommendationSchema.parse(value) });
             if (subject) subject.path = path;
             await workspace.save();

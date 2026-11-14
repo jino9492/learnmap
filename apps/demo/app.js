@@ -5,6 +5,7 @@ const element = (id) => document.getElementById(id);
 const showJson = (id, value) => { element(id).textContent = JSON.stringify(value, null, 2); };
 let analysisId;
 let question;
+let questionSet;
 let ready = false;
 let busy = false;
 let analyzing = false;
@@ -33,6 +34,7 @@ function controls() {
   element("upload-controls").disabled = blocked;
   element("learning-controls").disabled = blocked || !ready;
   element("answer-controls").disabled = blocked || !ready || !question;
+  element("question-picker").disabled = blocked || !questionSet;
   element("reconnect").disabled = !analysisId;
 }
 
@@ -115,7 +117,7 @@ const poller = createAnalysisPoller({
     showAnalysisProgress(element("analysis-progress").value || 0, "상태 조회 중단 — 분석 상태를 확인할 수 없습니다.");
     element("connection-status").textContent = "";
     analysisId = undefined;
-    question = undefined;
+    question = undefined; questionSet = undefined;
     ready = false;
     analyzing = false;
     serverBusy = false;
@@ -160,7 +162,7 @@ element("upload-form").addEventListener("submit", async (event) => {
   serverBusy = false;
   connectionLost = false;
   ready = false;
-  question = undefined;
+  question = undefined; questionSet = undefined;
   analysisId = undefined;
   saveAnalysis(undefined);
   poller.stop();
@@ -188,7 +190,8 @@ element("upload-form").addEventListener("submit", async (event) => {
 });
 
 element("concept").addEventListener("change", () => {
-  question = undefined;
+  question = undefined; questionSet = undefined;
+  element("question-picker").replaceChildren();
   showJson("question-result", null);
   showJson("evaluation-result", null);
   showJson("path-result", null);
@@ -196,9 +199,19 @@ element("concept").addEventListener("change", () => {
 });
 
 element("generate-question").addEventListener("click", () => perform("문제를 생성 중입니다.", async () => {
-  question = undefined;
+  question = undefined; questionSet = undefined;
   controls();
   question = await post("questions", { conceptId: element("concept").value, type: element("question-type").value, difficulty: element("difficulty").value });
+  questionSet = question;
+  element("question-picker").replaceChildren(...questionSet.questions.map((entry, index) => {
+    const option = document.createElement("option"); option.value = index;
+    option.textContent = `${index + 1} / ${questionSet.total} · ${entry.topic}`;
+    return option;
+  }));
+  displayQuestion(0);
+}));
+function displayQuestion(index) {
+  question = questionSet.questions[index];
   showLocalizationStatus(question.localization);
   showJson("question-result", question);
   showJson("evaluation-result", null);
@@ -213,7 +226,10 @@ element("generate-question").addEventListener("click", () => perform("문제를 
     option.textContent = value;
     element("answer-option").append(option);
   }
-}));
+}
+element("question-picker").addEventListener("change", () => {
+  displayQuestion(Number(element("question-picker").value)); controls();
+});
 
 element("answer-form").addEventListener("submit", (event) => {
   event.preventDefault();

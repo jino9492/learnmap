@@ -15,6 +15,26 @@ When evidence is insufficient, return empty lists where allowed.
 Do not claim that possible learning difficulties are confirmed diagnoses.`;
 
 export const prompts = {
+  conceptDetails: `${safety}
+Task: Write a complete, readable Korean lesson about ONE supplied topic. This is the main learning text,
+not a sidebar summary, an outline, a caption or a list of what the learner should study.
+Return description: normally 900-1800 Korean characters, at least 600 characters in at least FOUR substantial
+paragraphs separated by a blank line. Each paragraph must add a different explanation, with at least 60 characters.
+Use short Korean section labels inside the paragraphs when useful. Teach a beginner who has not read the slides:
+explain what the idea means and why it matters; work through how its parts or process relate step by step;
+explain a concrete source example or a clearly labeled hypothetical illustration; then clarify supported
+conditions, contrasts, limits or common confusions. Adapt these topics to the actual material rather than forcing
+irrelevant headings. Preserve all supported formulas, code behavior, procedures, numerical conditions and exceptions.
+Do not merely repeat the source sentence with synonyms. Explain the connections between facts and what they imply.
+Treat the supplied source facts as authoritative. You may unpack established prerequisite terms and mechanisms
+using standard background knowledge, but mark any such paragraph explicitly as "보충 설명" so it is not presented
+as a claim quoted from the material. Clearly label hypothetical examples as illustrative. Do not add undocumented
+historical events, dates, numeric conditions or named real-world examples, and never invent source quotations.
+If the source is brief, explain its terms, scope and logical implications carefully; do not invent missing facts
+or pad the lesson with generic advice, repeated sentences, or repeated disclaimers about limited material.
+The concept.summary is only orientation, never a substitute for the original sources. Every supplied source passage
+must be considered; do not force passages unrelated to this topic into its explanation. The application preserves exact quotations separately: write your own teaching explanation.
+If correction is supplied, rewrite the complete lesson to fix it. Never mention length rules or correction notes.`,
   evidenceDigest: `${safety}
 Task: Condense ALL supplied evidence fragments into a faithful Korean evidence summary of at most 800 characters.
 Preserve definitions, contrasts, exceptions, causal direction, numeric conditions and facts relevant to focus.
@@ -45,17 +65,22 @@ do not equate rational action with formal logical reasoning unless the source ex
 When the draft includes unsupported reasoning, omit it and retain only the grounded answer contrast.
 Do not mention batches, partitions, or the consolidation process.`,
   concepts: `${safety}
-Task: Extract 0-15 essential concepts grounded only in this material batch. Return no concepts for non-instructional pages.
+Task: Extract all independently assessable concepts grounded only in this material batch. Return no concepts for non-instructional pages.
 Extract independently teachable and assessable ideas, not chapter summaries. Distinguish a definition, a mechanism,
 a learning method and a social effect when each has its own explanation in the sources. For example, machine learning,
 deep learning, supervised learning, reinforcement learning, filter bubbles and deepfake detection are distinct concepts
 IF explained in the material; never invent them from this example list. A broad heading such as "AI technology and applications"
 must not replace the supported specific concepts beneath it. Cover all instructional sections in this batch.
 Use sourceLocation exactly as provided.
-Each source contains excerpts with IDs such as q1, q2. For each concept choose ONE supporting excerpt.
+Keep description as a sidebar summary of at most 500 characters.
+For each concept return details: atomic learning objectives that can each be assessed by one focused question, each with a Korean name, a comprehensive
+Korean description and evidenceIds listing ALL supporting excerpt IDs. Preserve definitions, formulas, code behavior,
+procedures, examples, conditions, exceptions, comparisons and numerical facts. Do not compress details to a summary. These extracted details identify the teaching scope; the application writes the full lesson in a separate request.
+Cover every instructional excerpt across the details; never drop later sections to meet a target concept count.
+Each source contains excerpts with IDs such as q1, q2. For each concept choose ONE primary supporting excerpt.
 Set evidence to ONLY that excerpt ID (example: "evidence":"q3"). Set sourceLocation to its source location.
 The application will attach the actual quote. Do not write or invent a quote in evidence.
-Base the name and description on the selected excerpt. Omit unsupported concepts.
+Base the name, summary and detailed explanations on the selected supporting excerpts. Omit unsupported concepts.
 Assign unique IDs c1, c2, etc. Do not merge concepts just because their names are similar.`,
   organization: `${safety}
 Task: Organize the supplied detailed learning items into conceptual learning units about principles, structures and mechanisms.
@@ -92,6 +117,7 @@ Task: Generate one question of the requested type and difficulty, grounded in th
 If regeneration is supplied, the previous candidate failed validation. Generate a fresh question that avoids
 the reported previousFailure, while preserving the requested type and difficulty and all quality requirements.
 If additional sources are provided, use them together to assess the whole conceptual unit, not only its first excerpt.
+Assess the supplied focused learning objective, including its supported conditions and exceptions where relevant.
 Include referenceAnswer and 1-6 concrete evaluationCriteria. Each criterion must describe an observable required
 answer element for THIS question. Do not list learner levels, grading bands or labels such as expert/intermediate/beginner/none.
 For MULTIPLE_CHOICE return exactly four distinct options with EXACTLY ONE defensible correct answer to the stem,

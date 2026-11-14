@@ -41,6 +41,12 @@ export function createWorkspace(storagePath) {
   return { analyses, subjects, initialized, save };
 }
 
+export function conceptContentKey(concept) {
+  const citations = [concept, ...(concept.citations ?? []), ...(concept.details ?? [])]
+    .map(({ sourceLocation, evidence }) => JSON.stringify([sourceLocation, evidence]));
+  return JSON.stringify([concept.name, concept.description, [...new Set(citations)].sort()]);
+}
+
 export function combineSubject(subject, analyses) {
   const jobs = [...analyses.values()].filter((job) => job.subjectId === subject.id);
   const concepts = [];
@@ -53,12 +59,13 @@ export function combineSubject(subject, analyses) {
       const identity = JSON.stringify([concept.name.trim().toLowerCase(), concept.description.trim()]);
       const sourceLocation = `${job.id}/${concept.sourceLocation}`;
       const citations = (concept.citations ?? [{ sourceLocation: concept.sourceLocation, evidence: concept.evidence }]).map((citation) => ({ ...citation, sourceLocation: `${job.id}/${citation.sourceLocation}` }));
+      const details = concept.details?.map((detail) => ({ ...detail, sourceLocation: `${job.id}/${detail.sourceLocation}` }));
       let target = identities.get(identity);
       if (!target) {
-        target = { ...concept, id: `${job.id}:${concept.id}`, sourceLocation, citations };
+        target = { ...concept, id: `${job.id}:${concept.id}`, sourceLocation, citations, details };
         identities.set(identity, target);
         concepts.push(target);
-      } else target.citations.push(...citations);
+      } else { target.citations.push(...citations); target.details = [...(target.details ?? []), ...(details ?? [])]; }
       ids.set(concept.id, target.id);
     }
     for (const relation of job.relations) {
@@ -80,6 +87,10 @@ export function combineSubject(subject, analyses) {
     }
     sources.push(...job.material.sources.map((source) => ({ ...source, location: `${job.id}/${source.location}` })));
   }
+  for (const concept of concepts) {
+    const override = subject.detailOverrides?.[concept.id];
+    if (override?.signature === conceptContentKey(concept)) concept.details = override.details;
+  }
   const validIds = new Set(concepts.map((concept) => concept.id));
   const keys = new Set(relations.map(relationKey));
   for (const relation of subject.crossRelations ?? []) {
@@ -97,7 +108,18 @@ export function combineSubject(subject, analyses) {
 }
 
 export function learningProgress(history) {
-  const scores = history.scores.slice(-5);
-  const score = Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length);
-  return { conceptId: history.conceptId, score, status: score >= 80 ? "MASTERED" : score >= 50 ? "REVIEW_REQUIRED" : "WEAK" };
+  const active = history.assessment;
+  if (!active) {
+    const scores = history.scores.slice(-5);
+    const score = scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : 0;
+    return { conceptId: history.conceptId, score, status: !scores.length ? "NOT_STARTED" : score >= 80 ? "MASTERED" : score >= 50 ? "REVIEW_REQUIRED" : "WEAK" };
+  }
+  const scores = Object.values(active.scores);
+  const answered = scores.length;
+  const total = active?.total ?? answered;
+  const accuracy = answered ? Math.round(scores.reduce((sum, value) => sum + value, 0) / answered) : 0;
+  const score = total ? Math.round(scores.reduce((sum, value) => sum + value, 0) / total) : 0;
+  return { conceptId: history.conceptId, score, accuracy, answered, total,
+    coverage: total ? Math.round(answered / total * 100) : 0,
+    status: !answered ? "NOT_STARTED" : answered === total && score >= 80 ? "MASTERED" : score >= 50 ? "REVIEW_REQUIRED" : "WEAK" };
 }

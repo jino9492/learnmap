@@ -53,6 +53,7 @@
         </div>
         <aside id="concept-detail" class="panel concept-detail" aria-label="개념 상세 정보"></aside>
       </section>
+      <section id="concept-view" class="page-view" hidden aria-label="세부 개념"><div class="page-heading"><a href="#map">← 지식 그래프로</a></div><div id="concept-content" class="concept-content"></div></section>
       <section id="path-view" class="page-view" hidden aria-labelledby="path-title">
         <div class="page-heading"><h1 id="path-title">오늘의 추천 학습 경로</h1><p>현재 이해도와 선수 개념을 기준으로 학습 순서를 제안합니다.</p><div id="path-tags" class="tags"></div></div>
         <div class="page-grid"><div class="panel path-card"><h2>추천 순서</h2><p class="muted">이해가 부족한 개념의 선수 관계를 따라 구성된 경로입니다.</p><div id="path-steps" class="path-steps"></div><div class="insight"><h3>왜 이 순서인가요?</h3><p id="path-reason">그래프에서 목표 개념을 선택하고 추천 학습 경로를 생성해 보세요.</p><span class="pill blue">AI 분석 · 원인 후보</span></div></div><aside id="path-progress" class="panel path-progress"></aside></div>
@@ -61,7 +62,7 @@
         <div class="page-heading"><h1 id="quiz-title">개념 이해도 평가</h1><p>학습 자료를 바탕으로 생성된 문제를 풀고 이해도를 확인하세요.</p><div class="tags"><span class="pill blue">AI 생성 문제</span><span id="quiz-type-label" class="pill neutral">문제 설정</span></div></div>
         <div class="page-grid"><div class="panel quiz-card"><form id="question-form"><fieldset id="question-controls"><legend>문제 설정</legend><div class="form-row"><label>문제 유형<select id="question-type"><option value="ESSAY">서술형</option><option value="SHORT_ANSWER">단답형</option><option value="MULTIPLE_CHOICE">객관식</option></select></label><label>난이도<select id="difficulty"><option value="EASY">쉬움</option><option value="MEDIUM" selected>보통</option><option value="HARD">어려움</option></select></label><button class="primary" type="submit">문제 생성</button></div></fieldset></form>
           <div id="question-body" hidden><div class="quiz-meta"><span id="question-number">문제</span><span id="quiz-progress-label">답변 대기 중</span></div><progress id="quiz-progress" max="100" value="0" aria-label="문제 풀이 진행률"></progress><p class="question-label">Q.</p><h2 id="question-text"></h2><form id="answer-form"><fieldset id="answer-controls"><legend class="sr-only">답안 입력</legend><label id="written-answer"><span class="sr-only">답안</span><textarea id="answer" rows="6" maxlength="8000" placeholder="개념을 이해한 내용을 자신의 말로 설명해 주세요."></textarea></label><div id="answer-options" class="answer-options"></div><p class="answer-note">제출 후 AI가 개념 이해도와 오개념을 분석합니다.</p><div class="actions"><button type="button" class="secondary" data-back>지식 그래프로</button><button id="submit-answer" class="primary" type="submit">답안 제출</button></div></fieldset></form></div>
-          <div id="question-empty" class="quiz-empty"><h2>배운 내용을 확인해 보세요</h2><p>유형과 난이도를 선택하면 선택한 개념의 문제가 생성됩니다.</p></div>
+          <div id="question-empty" class="quiz-empty"><h2>배운 내용을 확인해 보세요</h2><p>유형과 난이도를 선택하면 개념의 세부 범위와 분량에 맞춰 여러 문제가 생성됩니다.</p></div>
           <div id="evaluation" class="evaluation" hidden></div>
         </div><aside id="quiz-info" class="panel quiz-info"></aside></div>
       </section>

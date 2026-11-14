@@ -7,6 +7,7 @@ export const materialSchema = object<Material>({
 });
 const conceptSchema = object<Concept>({
   id: text, name: text, description: text, sourceLocation: text, evidence: text,
+  details: optional(list(object({ name: text, description: text, sourceLocation: text, evidence: text }), 1, Infinity)),
   memberConceptIds: optional(list(text, 1, Infinity)),
   citations: optional(list(object({ sourceLocation: text, evidence: text }), 1, Infinity)),
 });
@@ -14,10 +15,11 @@ export const conceptsSchema = object<{ concepts: Concept[] }>({
   concepts: list(conceptSchema, 0, 15),
 });
 export function conceptGenerationSchema(evidenceIds: string[]) {
-  return object<{ concepts: Concept[] }>({
-    concepts: list(object<Concept>({
-      id: text, name: text, description: text, sourceLocation: text, evidence: choice(...evidenceIds),
-    }), 0, 15),
+  return object({
+    concepts: list(object({
+      id: text, name: text, description: boundedText(500), sourceLocation: text, evidence: choice(...evidenceIds),
+      details: optional(list(object({ name: text, description: text, evidenceIds: list(choice(...evidenceIds), 1, evidenceIds.length) }), 1, evidenceIds.length)),
+    }), 0, Math.max(15, evidenceIds.length)),
   });
 }
 export const conceptCollectionSchema = object<{ concepts: Concept[] }>({ concepts: list(conceptSchema, 1, Infinity) });
