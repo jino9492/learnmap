@@ -8,6 +8,8 @@ AI가 생성하는 개념명·설명·문제·채점 피드백·학습 경로는
 
 Node.js 24 이상에서 `npm install` 후 `.env.example`을 참고해 `.env`에 AI 공급자와 모델을 설정하고 실행합니다.
 
+Ollama에서는 `OLLAMA_MODEL=deepseek-r1:14b`, `OLLAMA_FAST_MODEL=qwen2.5:7b`처럼 작업별 모델을 분리할 수 있습니다. 개념 추출·개념 정리·관계 분석은 `OLLAMA_MODEL`을 사용하고, 문제 생성·객관식 검토·채점·학습 경로·근거 요약·한국어 보정은 `OLLAMA_FAST_MODEL`을 사용하며 추론을 끕니다(`think: false`). 두 모델 모두 Ollama에 설치되어 있어야 합니다. `OLLAMA_FAST_MODEL`을 비우면 기존처럼 모든 작업이 `OLLAMA_MODEL`을 사용합니다. 요청 진단 이벤트의 `model`로 실제 사용 모델을 확인할 수 있습니다. `.env` 변경은 서버를 재시작하면 적용됩니다. 작은 모델의 문제·채점 품질과 한국어 출력은 실제 학습 자료로 확인하세요.
+
 ```powershell
 npm start
 ```

@@ -7,6 +7,7 @@ export interface OllamaOptions extends TransportOptions {
   model: string;
   baseUrl?: string;
   contextLength?: number;
+  think?: boolean;
 }
 
 function localEndpoint(baseUrl: string): string {
@@ -46,6 +47,7 @@ export function createOllamaClient(options: OllamaOptions): LlmClient {
     body(request, expandedContext) {
       return {
         model: options.model, stream: false, format: request.schema.json,
+        ...(options.think !== undefined ? { think: options.think } : {}),
         messages: [
           { role: "system", content: request.instructions },
           { role: "user", content: JSON.stringify(request.data) },
@@ -54,5 +56,6 @@ export function createOllamaClient(options: OllamaOptions): LlmClient {
       };
     },
     output: responseText,
-  }, { ...options, timeoutMs: options.timeoutMs ?? 180000 });
+  }, { ...options, timeoutMs: options.timeoutMs ?? 180000,
+    onEvent: options.onEvent ? (event) => options.onEvent?.({ ...event, model: options.model }) : undefined });
 }

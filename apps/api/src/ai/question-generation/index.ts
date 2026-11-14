@@ -1,7 +1,7 @@
 import type { Concept, LlmClient, Material, Question, QuestionType } from "../core/contracts.ts";
 import { ensure } from "../core/errors.ts";
 import { prompts } from "../core/prompts.ts";
-import { conceptsSchema, questionSchema } from "../core/schemas.ts";
+import { conceptsSchema, questionSchema, questionGenerationSchema } from "../core/schemas.ts";
 import { choice, list, object, text } from "../core/schema.ts";
 import { validateMaterial } from "../concept-extraction/index.ts";
 import { conceptCitations, conceptSummary } from "../../features/material-analysis/index.ts";
@@ -48,7 +48,7 @@ export async function generateQuestion(client: LlmClient, concept: Concept, mate
   questionContext(concept, material);
   ensure(["MULTIPLE_CHOICE", "SHORT_ANSWER", "ESSAY"].includes(type) && ["EASY", "MEDIUM", "HARD"].includes(difficulty), "Invalid question settings.", "INPUT");
   const context = await prepareQuestionContext(client, concept, material);
-  const question = validateQuestion(await client.generate({ name: "question_generation", instructions: prompts.question, data: { ...context, type, difficulty }, schema: questionSchema }));
+  const question = validateQuestion(await client.generate({ name: "question_generation", instructions: prompts.question, data: { ...context, type, difficulty }, schema: questionGenerationSchema(type) }));
   ensure(question.type === type, "Generated question type differs from the requested type.");
   await reviewChoiceQuestion(client, concept, material, question);
   return question;

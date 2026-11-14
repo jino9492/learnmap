@@ -1,4 +1,4 @@
-import type { LlmClient } from "./contracts.ts";
+import type { GenerationRequest, LlmClient } from "./contracts.ts";
 import { createOpenAiClient } from "./client.ts";
 import { createGeminiClient } from "./gemini-client.ts";
 import { createOllamaClient } from "./ollama-client.ts";
@@ -32,8 +32,25 @@ export function createConfiguredClient(env: Record<string, string | undefined>, 
     case "gemini":
       return createGeminiClient({ ...transport, apiKey: env.GEMINI_API_KEY?.trim() ?? "", model: env.GEMINI_MODEL?.trim() ?? "" });
     case "ollama":
-      return createOllamaClient({ ...transport, model: env.OLLAMA_MODEL?.trim() ?? "", baseUrl: env.OLLAMA_BASE_URL?.trim() || undefined, contextLength: env.OLLAMA_CONTEXT_LENGTH?.trim() ? Number(env.OLLAMA_CONTEXT_LENGTH) : undefined });
+      return createTaskRoutedOllamaClient(env, transport);
     default:
       throw new AiError("CONFIG", "AI_PROVIDER must be openai, gemini, or ollama.");
   }
+}
+
+const graphTasks = new Set(["concept_extraction", "concept_organization", "relation_analysis"]);
+
+function createTaskRoutedOllamaClient(env: Record<string, string | undefined>, transport: TransportOptions): LlmClient {
+  const shared = { ...transport, baseUrl: env.OLLAMA_BASE_URL?.trim() || undefined,
+    contextLength: env.OLLAMA_CONTEXT_LENGTH?.trim() ? Number(env.OLLAMA_CONTEXT_LENGTH) : undefined };
+  const graph = createOllamaClient({ ...shared, model: env.OLLAMA_MODEL?.trim() ?? "" });
+  const fastModel = env.OLLAMA_FAST_MODEL?.trim();
+  // Preserve existing single-model configurations when no fast model is selected.
+  if (!fastModel) return graph;
+  const fast = createOllamaClient({ ...shared, model: fastModel, think: false });
+  return {
+    generate<T>(request: GenerationRequest<T>): Promise<T> {
+      return (graphTasks.has(request.name) ? graph : fast).generate(request);
+    },
+  };
 }

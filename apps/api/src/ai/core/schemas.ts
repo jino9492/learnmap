@@ -1,4 +1,4 @@
-import type { Concept, Evaluation, Material, Question, Recommendation, Relation } from "./contracts.ts";
+import type { Concept, Evaluation, Material, Question, QuestionType, Recommendation, Relation } from "./contracts.ts";
 import { boundedText, choice, list, object, optional, score, text } from "./schema.ts";
 
 export const materialSchema = object<Material>({
@@ -45,6 +45,13 @@ export const questionSchema = object<Question>({
   type: choice("MULTIPLE_CHOICE", "SHORT_ANSWER", "ESSAY"), question: text,
   options: list(text, 0, 4), referenceAnswer: text, evaluationCriteria: list(text, 1, 6),
 });
+export function questionGenerationSchema(type: QuestionType) {
+  return object<Question>({
+    type: choice(type), question: text,
+    options: list(text, type === "MULTIPLE_CHOICE" ? 4 : 0, type === "MULTIPLE_CHOICE" ? 4 : 0),
+    referenceAnswer: text, evaluationCriteria: list(text, 1, 6),
+  });
+}
 export const evaluationSchema = object<Evaluation>({ score, feedback: text, weakPoints: list(text, 0, 10) });
 export function evaluationGenerationSchema(conceptIds: string[], feedbackCharacters = 12000) {
   return object<Evaluation>({ score, feedback: boundedText(feedbackCharacters), weakPoints: list(choice(...conceptIds), 0, 10) });

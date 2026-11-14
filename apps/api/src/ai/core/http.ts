@@ -4,6 +4,7 @@ import { isRecord } from "./schema.ts";
 
 export interface UsageEvent {
   provider: string;
+  model?: string;
   task: string;
   attempt: number;
   usage?: unknown;
