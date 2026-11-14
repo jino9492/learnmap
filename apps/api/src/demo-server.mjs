@@ -67,6 +67,8 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
     ["/assets/avatar.svg", { url: new URL("../../web/assets/avatar.svg", import.meta.url), type: "image/svg+xml" }],
     ["/app.js", { url: new URL("../../demo/app.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
     ["/api.js", { url: new URL("../../demo/api.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
+    ["/loading.js", { url: new URL("../../demo/loading.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
+    ["/loading.css", { url: new URL("../../demo/loading.css", import.meta.url), type: "text/css; charset=utf-8" }],
   ]);
 
   function snapshot(job) {

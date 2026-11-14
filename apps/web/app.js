@@ -1,8 +1,10 @@
 import { createApiClient, createAnalysisPoller, apiErrorMessage } from "/api.js";
 import { createGraph, statusLabels, statusColors } from "/graph.js";
+import { createAiLoading } from "/loading.js";
 
 const $ = (id) => document.getElementById(id);
 const request = createApiClient();
+const withAiLoading = createAiLoading();
 const state = { subjects: [], subject: null, selectedId: null, query: "", filter: "ALL", busy: false, analysisId: null, question: null, submitted: false, deleteId: null };
 let loadVersion = 0;
 let questionNumber = 0;
@@ -238,7 +240,7 @@ function resetQuestion() {
   $("question-body").hidden = true; $("question-empty").hidden = false; $("evaluation").hidden = true; $("answer").value = ""; $("answer-options").replaceChildren(); controls();
 }
 function openQuiz() { if (!selected()) return; renderQuizInfo(); location.hash = "quiz"; $("question-type").focus(); }
-async function post(action, input) { return request(`/api/analyses/${state.subject.id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }); }
+async function post(action, input) { return withAiLoading(action, () => request(`/api/analyses/${state.subject.id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) })); }
 $("question-form").addEventListener("submit", (event) => {
   event.preventDefault(); if (!selected()) return;
   void perform("학습 자료를 바탕으로 문제를 생성하고 있습니다.", async () => {

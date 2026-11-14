@@ -1,4 +1,5 @@
 import { createApiClient, createAnalysisPoller } from "./api.js";
+import { createAiLoading } from "./loading.js";
 
 const element = (id) => document.getElementById(id);
 const showJson = (id, value) => { element(id).textContent = JSON.stringify(value, null, 2); };
@@ -10,6 +11,7 @@ let analyzing = false;
 let serverBusy = false;
 let connectionLost = false;
 const request = createApiClient();
+const withAiLoading = createAiLoading();
 const storageKey = "learnmap.demo.analysisId";
 
 function saveAnalysis(id) {
@@ -132,6 +134,7 @@ function showLocalizationStatus(report) {
 element("reconnect").addEventListener("click", () => void poller.refresh());
 
 async function perform(label, action) {
+  if (busy) return;
   busy = true;
   element("error").textContent = "";
   element("localization-status").textContent = "";
@@ -144,7 +147,7 @@ async function perform(label, action) {
 }
 
 async function post(action, value) {
-  return request(`/api/analyses/${analysisId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
+  return withAiLoading(action, () => request(`/api/analyses/${analysisId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) }));
 }
 
 element("upload-form").addEventListener("submit", async (event) => {
