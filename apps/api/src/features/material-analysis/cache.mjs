@@ -5,11 +5,11 @@ import { conceptCollectionSchema, conceptGenerationSchema, conceptOrganizationSc
 export function analysisCacheScope(env, options) {
   const provider = env.AI_PROVIDER?.trim().toLowerCase() || "openai";
   const settings = provider === "ollama"
-    ? [env.OLLAMA_MODEL, env.OLLAMA_BASE_URL, env.OLLAMA_CONTEXT_LENGTH]
-    : provider === "gemini" ? [env.GEMINI_MODEL, env.GEMINI_API_KEY] : [env.OPENAI_MODEL, env.OPENAI_API_KEY];
+    ? [env.OLLAMA_MODEL, env.OLLAMA_FAST_MODEL, env.OLLAMA_BASE_URL, env.OLLAMA_CONTEXT_LENGTH]
+    : provider === "gemini" ? [env.GEMINI_MODEL, env.GEMINI_FAST_MODEL, env.GEMINI_API_KEY] : [env.OPENAI_MODEL, env.OPENAI_FAST_MODEL, env.OPENAI_API_KEY];
   // Hash credentials with the configuration; never expose or retain them as cache keys.
   return createHash("sha256").update(JSON.stringify([
-    "analysis-v2", provider, settings, options, prompts,
+    "analysis-v6-retrieval-checkpoints-single-pass", provider, settings, options, prompts,
     conceptCollectionSchema.json, relationCollectionSchema.json,
     conceptGenerationSchema(["evidence"]).json, conceptOrganizationSchema(["member"]).json, relationGenerationSchema(["concept"]).json,
   ])).digest("hex");
@@ -25,7 +25,7 @@ export function createAnalysisCache({ maxEntries = 32, maxBytes = 16 * 1024 * 10
     completed.delete(key);
   }
   return {
-    async run(keyParts, produce, onStatus = () => {}) {
+    async run(keyParts, produce, onStatus = () => {}, shouldCache = () => true) {
       const key = createHash("sha256").update(JSON.stringify(keyParts)).digest("hex");
       for (const [id, entry] of completed) if (entry.expiresAt <= now()) remove(id);
       const cached = completed.get(key);
@@ -44,7 +44,7 @@ export function createAnalysisCache({ maxEntries = 32, maxBytes = 16 * 1024 * 10
       const task = Promise.resolve().then(produce).then((value) => {
         const snapshot = structuredClone(value);
         const size = Buffer.byteLength(JSON.stringify(snapshot));
-        if (maxEntries > 0 && size <= maxBytes && ttlMs > 0) {
+        if (maxEntries > 0 && size <= maxBytes && ttlMs > 0 && shouldCache(snapshot)) {
           while (completed.size && (completed.size >= maxEntries || bytes + size > maxBytes)) remove(completed.keys().next().value);
           completed.set(key, { value: snapshot, bytes: size, expiresAt: now() + ttlMs });
           bytes += size;

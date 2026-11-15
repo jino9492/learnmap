@@ -2,3 +2,30 @@
 main:focus {
   outline: none;
 }
+.analysis-materials {
+  grid-column: 1 / -1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.analysis-materials li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+.analysis-materials li span {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.analysis-materials li span:first-child {
+  grid-column: 1 / -1;
+}
+.analysis-materials li progress {
+  grid-column: 1;
+  grid-row: auto;
+  align-self: center;
+  margin: 0;
+}

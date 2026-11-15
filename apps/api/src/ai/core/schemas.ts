@@ -8,6 +8,7 @@ export const materialSchema = object<Material>({
 const conceptSchema = object<Concept>({
   id: text, name: text, description: text, sourceLocation: text, evidence: text,
   details: optional(list(object({ name: text, description: text, sourceLocation: text, evidence: text }), 1, Infinity)),
+  detailsState: optional(choice("pending", "ready")),
   memberConceptIds: optional(list(text, 1, Infinity)),
   citations: optional(list(object({ sourceLocation: text, evidence: text }), 1, Infinity)),
 });

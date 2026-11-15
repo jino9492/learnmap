@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname } from "node:path";
 import { validateGraph } from '../knowledge-graph/index.ts';
 import { relationKey } from '../material-analysis/index.ts';
+import { analysisProgress } from '../material-analysis/progress.mjs';
 
 export function createWorkspace(storagePath) {
   const analyses = new Map();
@@ -65,7 +66,10 @@ export function combineSubject(subject, analyses) {
         target = { ...concept, id: `${job.id}:${concept.id}`, sourceLocation, citations, details };
         identities.set(identity, target);
         concepts.push(target);
-      } else { target.citations.push(...citations); target.details = [...(target.details ?? []), ...(details ?? [])]; }
+      } else {
+        target.citations.push(...citations); target.details = [...(target.details ?? []), ...(details ?? [])];
+        if (concept.detailsState === 'pending') target.detailsState = 'pending';
+      }
       ids.set(concept.id, target.id);
     }
     for (const relation of job.relations) {
@@ -89,7 +93,10 @@ export function combineSubject(subject, analyses) {
   }
   for (const concept of concepts) {
     const override = subject.detailOverrides?.[concept.id];
-    if (override?.signature === conceptContentKey(concept)) concept.details = override.details;
+    if (override?.signature === conceptContentKey(concept)) {
+      concept.details = override.details;
+      concept.detailsState = 'ready';
+    }
   }
   const validIds = new Set(concepts.map((concept) => concept.id));
   const keys = new Set(relations.map(relationKey));
@@ -103,7 +110,9 @@ export function combineSubject(subject, analyses) {
   return {
     ...subject, status: concepts.length ? "ready" : "empty", concepts, relations,
     material: { id: subject.id, title: subject.name, sources },
-    materials: jobs.map((job) => ({ id: job.id, title: job.filename, status: job.status, mode: job.mode, error: job.error })),
+    materials: jobs.map((job) => ({ id: job.id, title: job.filename, status: job.status, mode: job.mode, error: job.error,
+      warnings: (job.events ?? []).filter((event) => event.kind === 'progress' && event.warning).map((event) => event.detail),
+      analysisProgress: analysisProgress(job) })),
   };
 }
 

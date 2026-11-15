@@ -83,6 +83,9 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
   const sleep = options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   return {
     async generate<T>(request: GenerationRequest<T>): Promise<T> {
+      ensure(request.deadlineAt === undefined || Number.isFinite(request.deadlineAt), "Invalid request deadline.", "CONFIG");
+      ensure(request.maxAttempts === undefined || (Number.isInteger(request.maxAttempts) && request.maxAttempts >= 1 && request.maxAttempts <= 8), "Invalid request attempt limit.", "CONFIG");
+      const attemptLimit = Math.min(maxAttempts, request.maxAttempts ?? maxAttempts);
       const requestId = randomUUID();
       const report = (event: UsageEvent) => {
         logAiEvent({ kind: "request", requestId, outcome: event.error ? (event.retryInMs !== undefined ? "retrying" : "failed") : "completed", ...event });
@@ -91,12 +94,14 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
       let body = JSON.stringify(adapter.body(request));
       let contextTokens = adapter.contextRecovery?.initialTokens;
       let recoveredContext = false;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      for (let attempt = 1; attempt <= attemptLimit; attempt++) {
+        const remainingMs = request.deadlineAt === undefined ? timeoutMs : Math.min(timeoutMs, request.deadlineAt - Date.now());
+        if (remainingMs <= 0) throw new AiError("TIMEOUT", "The analysis deadline was reached.");
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const timer = setTimeout(() => controller.abort(), remainingMs);
         const startedAt = Date.now();
         let phase: "headers" | "body" | "validation" = "headers";
-        const event = { provider: adapter.provider, model: adapter.model, task: request.name, attempt, timeoutMs, requestCharacters: body.length };
+        const event = { provider: adapter.provider, model: adapter.model, task: request.name, attempt, timeoutMs: remainingMs, requestCharacters: body.length };
         logAiEvent({ kind: "request", requestId, outcome: "started", ...event });
         const diagnostics = () => ({ elapsedMs: Date.now() - startedAt, phase });
         try {
@@ -110,7 +115,7 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
             const delay = retryDelay(response, attempt);
             const provider = await providerDiagnostics(response);
             const recovery = adapter.contextRecovery;
-            if (response.status === 400 && recovery && !recoveredContext && provider.inputTokens !== undefined && provider.contextTokens !== undefined && attempt < maxAttempts) {
+            if (response.status === 400 && recovery && !recoveredContext && provider.inputTokens !== undefined && provider.contextTokens !== undefined && attempt < attemptLimit) {
               const required = Math.max(provider.inputTokens + recovery.outputTokens, (contextTokens ?? recovery.initialTokens) + 1);
               const expanded = 2 ** Math.ceil(Math.log2(required));
               if (expanded <= recovery.maxTokens) {
@@ -121,7 +126,7 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
                 continue;
               }
             }
-            if (retryable && attempt < maxAttempts && delay <= 60000) {
+            if (retryable && attempt < attemptLimit && delay <= 60000 && (request.deadlineAt === undefined || Date.now() + delay < request.deadlineAt)) {
               report({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}`, retryInMs: delay });
               clearTimeout(timer);
               await sleep(delay);
@@ -154,11 +159,12 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
         } catch (error) {
           const failure = error instanceof AiError ? error : new AiError(
             controller.signal.aborted ? "TIMEOUT" : "CONNECTION",
-            controller.signal.aborted ? `LLM request timed out after ${timeoutMs} ms while waiting for response ${phase}. Adjust AI_TIMEOUT_MS or reduce AI_BATCH_CHARACTERS.` : "Could not read the LLM response.",
+            controller.signal.aborted ? `LLM request timed out after ${remainingMs} ms while waiting for response ${phase}. Adjust AI_TIMEOUT_MS or reduce AI_BATCH_CHARACTERS.` : "Could not read the LLM response.",
           );
           const formatRetry = failure.code === "FORMAT";
-          const canRetry = (formatRetry || failure.code === "TIMEOUT" || failure.code === "CONNECTION") && attempt < Math.min(maxAttempts, 2);
           const delay = formatRetry ? 0 : 2000 + Math.floor(Math.random() * 1000);
+          const canRetry = (formatRetry || failure.code === "TIMEOUT" || failure.code === "CONNECTION") && attempt < Math.min(attemptLimit, 2)
+            && (request.deadlineAt === undefined || Date.now() + delay < request.deadlineAt);
           report({ ...event, ...diagnostics(), error: failure.code, ...(canRetry ? { retryInMs: delay } : {}) });
           if (canRetry) {
             clearTimeout(timer);

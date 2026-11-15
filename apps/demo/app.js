@@ -48,6 +48,8 @@ function showAnalysisProgress(value, label) {
 
 function renderAnalysisProgress(state) {
   if (state.status === "ready") { showAnalysisProgress(100, "분석 완료 (100%)"); return; }
+  if (state.status === "linking_subject") { showAnalysisProgress(90, "다른 자료와 연결·검증 중"); return; }
+  if (state.status === "saving") { showAnalysisProgress(99, "학습 지도 저장 중 (99%)"); return; }
   if (state.status === "failed") {
     showAnalysisProgress(element("analysis-progress").value || 0, "분석 실패 — 진행이 중단되었습니다.");
     return;

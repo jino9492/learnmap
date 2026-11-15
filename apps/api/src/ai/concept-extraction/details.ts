@@ -71,5 +71,5 @@ export async function expandConceptDetails(client: LlmClient, concepts: Concept[
     concept.details.splice(position, 0, ...expanded);
     onProgress?.({ stage: "concepts", completed: ++completed, total: tasks.length, detail: `${completed}/${tasks.length}개 세부 항목의 상세 설명을 작성했습니다.` });
   });
-  return result;
+  return result.map((concept) => ({ ...concept, detailsState: "ready" }));
 }

@@ -49,8 +49,8 @@ export async function generateQuestion(client: LlmClient, concept: Concept, mate
   ensure(["MULTIPLE_CHOICE", "SHORT_ANSWER", "ESSAY"].includes(type) && ["EASY", "MEDIUM", "HARD"].includes(difficulty), "Invalid question settings.", "INPUT");
   const context = await prepareQuestionContext(client, concept, material);
   let previousFailure: string | undefined;
-  // Question quality failures regenerate until valid, as requested. Provider failures still propagate.
-  for (let attempt = 1; ; attempt++) {
+  // Bound quality retries as well as transport retries so a request cannot run forever.
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const question = validateQuestion(await client.generate({ name: "question_generation", instructions: prompts.question,
         data: { ...context, type, difficulty, ...(previousFailure ? { regeneration: { attempt, previousFailure } } : {}) },
@@ -61,8 +61,10 @@ export async function generateQuestion(client: LlmClient, concept: Concept, mate
     } catch (error) {
       if (!(error instanceof AiError) || !["FORMAT", "SEMANTIC"].includes(error.code)) throw error;
       previousFailure = error.message;
+      if (attempt === 3) throw new AiError(error.code, "문항 품질 검증을 3회 통과하지 못했습니다. 다시 생성해 주세요.");
     }
   }
+  throw new AiError("SEMANTIC", "문항을 생성하지 못했습니다.");
 }
 
 export function publicQuestion(question: Question) {

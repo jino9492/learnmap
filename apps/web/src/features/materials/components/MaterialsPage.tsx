@@ -24,6 +24,7 @@ const materialLabels: Record<string, string> = {
   organizing_concepts: "개념 정리 중",
   analyzing_relations: "관계 분석 중",
   localizing: "한국어 정리 중",
+  linking_subject: "다른 자료와 연결 중",
   saving: "저장 중",
   ready: "분석 완료",
   failed: "분석 실패",
@@ -64,6 +65,11 @@ export const MaterialsPage = () => {
                 유지됩니다. 다시 분석해 주세요.
               </p>
             )}
+            {material.warnings?.map((warning, index) => (
+              <p role="alert" key={index}>
+                {warning}
+              </p>
+            ))}
             <div className="actions">
               <button
                 className="secondary"

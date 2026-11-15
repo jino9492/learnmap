@@ -69,6 +69,11 @@ test("routes preserve subject and concept across navigation, reload, quiz, and h
   await expect(
     page.getByRole("heading", { name: concept.name, exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("상세 설명은 필요할 때 작성합니다");
+  await page.getByRole("button", { name: "상세 설명 작성", exact: true }).click();
+  await expect(page.getByRole("button", { name: "상세 설명 다시 작성", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "상세 설명 다시 작성", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "이 개념 전체 평가하기" }).click();
   await page.getByRole("button", { name: "문제 생성", exact: true }).click();
   await expect(

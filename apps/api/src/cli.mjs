@@ -69,7 +69,7 @@ async function main() {
   const detailedConcepts = await measureAnalysisStage("concepts", async () => expandConceptDetails(client, await extractConcepts(client, material, reportProgress, options), material, reportProgress, options), reportTiming);
   const initialConcepts = mode === "conceptual" ? await measureAnalysisStage("organization", () => organizeConcepts(client, material, detailedConcepts, reportProgress, options), reportTiming) : detailedConcepts;
   stderr.write("Analyzing relations...\n");
-  const initialRelations = await measureAnalysisStage("relations", () => analyzeRelations(client, material, initialConcepts, reportProgress, options), reportTiming);
+  const initialRelations = await measureAnalysisStage("relations", () => analyzeRelations(client, material, initialConcepts, reportProgress, { ...options, concurrency: options.relationConcurrency }), reportTiming);
   const localized = await measureAnalysisStage("localization", () => localizeResult(client, {
     mode, concepts: initialConcepts, relations: initialRelations, ...(mode === "conceptual" ? { detailedConcepts } : {}),
   }, { onProgress: reportProgress, validate(value) {

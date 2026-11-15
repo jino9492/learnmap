@@ -2,6 +2,9 @@ import { ensure } from "./errors.ts";
 
 export interface BatchOptions {
   concurrency?: number;
+  checkpoints?: {
+    run<T>(key: unknown, produce: () => Promise<unknown>, validate: (value: unknown) => T, shouldStore?: (value: T) => boolean): Promise<T>;
+  };
 }
 
 export function validateConcurrency(value = 1): number {

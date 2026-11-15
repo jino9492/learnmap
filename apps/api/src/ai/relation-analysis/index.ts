@@ -3,17 +3,19 @@ import { validateGraph } from "../../features/knowledge-graph/index.ts";
 import { validateMaterial } from "../concept-extraction/index.ts";
 import { conceptCollectionSchema, relationGenerationSchema } from "../core/schemas.ts";
 import { prompts } from "../core/prompts.ts";
-import { conceptCitations, conceptSummary, conceptWindows, crossMaterialWindows, relationKey } from "../../features/material-analysis/index.ts";
+import { conceptCitations, conceptSummary, conceptWindows, relationKey } from "../../features/material-analysis/index.ts";
 import { AiError } from "../core/errors.ts";
 import { mapBatches } from "../core/batches.ts";
 import type { BatchOptions } from "../core/batches.ts";
 import { canSplitFailure, requestCharacters, REQUEST_CHARACTERS } from "../core/partition.ts";
 import { reviewRelations } from "./review.ts";
 import { relationEvidence } from "./evidence.ts";
+import { analyzeCrossMaterialRelations } from "./cross-material.ts";
 
 interface RelationOptions extends BatchOptions {
   crossMaterial?: boolean;
   existingRelations?: Relation[];
+  changedMaterialId?: string;
 }
 
 export async function analyzeRelations(client: LlmClient, input: unknown, concepts: Concept[], onProgress?: (progress: AnalysisProgress) => void, options: RelationOptions = {}) {
@@ -21,7 +23,8 @@ export async function analyzeRelations(client: LlmClient, input: unknown, concep
   conceptCollectionSchema.parse({ concepts });
   validateGraph({ concepts, relations: [] });
   for (const concept of concepts) conceptCitations(concept, material);
-  const windows = (options.crossMaterial ? crossMaterialWindows : conceptWindows)(concepts.map((concept) => ({
+  if (options.crossMaterial) return analyzeCrossMaterialRelations(client, material, concepts, onProgress, options);
+  const windows = conceptWindows(concepts.map((concept) => ({
     ...conceptSummary(concept), citations: relationEvidence(concept, material),
   })));
   validateGraph({ concepts, relations: options.existingRelations ?? [] });

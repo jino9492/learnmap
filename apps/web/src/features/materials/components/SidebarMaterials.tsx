@@ -16,6 +16,7 @@ const labels: Record<string, string> = {
   organizing_concepts: "개념 정리 중",
   analyzing_relations: "관계 분석 중",
   localizing: "한국어 정리 중",
+  linking_subject: "다른 자료와 연결 중",
   saving: "분석 저장 중",
   failed: "분석 실패 · 다시 분석할 수 있습니다",
   ready: "분석 완료",

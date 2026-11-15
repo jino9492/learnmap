@@ -31,7 +31,11 @@ function responseText(value: unknown): { text: string; usage: unknown } {
   ensure(message.role === "assistant" && typeof message.content === "string" && message.content.trim(), "Missing Ollama output text.", "FORMAT");
   return {
     text: message.content,
-    usage: { input_tokens: body.prompt_eval_count, output_tokens: body.eval_count },
+    usage: { input_tokens: body.prompt_eval_count, output_tokens: body.eval_count,
+      ...Object.fromEntries([['total_duration', 'totalMs'], ['load_duration', 'loadMs'],
+        ['prompt_eval_duration', 'promptEvalMs'], ['eval_duration', 'evalMs']]
+        .flatMap(([field, name]) => typeof body[field] === 'number' ? [[name, body[field] / 1_000_000]] : [])),
+    },
   };
 }
 

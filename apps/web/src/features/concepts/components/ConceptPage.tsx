@@ -87,31 +87,41 @@ export const ConceptPage = () => {
               )
             }
           >
-            상세 설명 다시 작성
+            {concept.detailsState === "pending"
+              ? "상세 설명 작성"
+              : "상세 설명 다시 작성"}
           </button>
         </div>
+        {concept.detailsState === "pending" && (
+          <p role="status">
+            상세 설명은 필요할 때 작성합니다. 아래에서 세부 학습 항목과 원문
+            근거를 확인하거나 ‘상세 설명 작성’을 눌러 주세요.
+          </p>
+        )}
         {Array.from(groups.values()).map((detail, index) => (
           <article className="panel concept-section" key={index}>
             <h2>
               {index + 1}. {detail.name}
             </h2>
-            <div className="lesson-body">
-              {explanationBlocks(detail.description).map((block, index) =>
-                block.type === "code" ? (
-                  <pre className="lesson-code" key={index}>
-                    <code>{block.text}</code>
-                  </pre>
-                ) : block.type === "heading" ? (
-                  <h3 className="lesson-heading" key={index}>
-                    {block.text}
-                  </h3>
-                ) : (
-                  <p className="concept-prose" key={index}>
-                    {block.text}
-                  </p>
-                ),
-              )}
-            </div>
+            {concept.detailsState !== "pending" && (
+              <div className="lesson-body">
+                {explanationBlocks(detail.description).map((block, index) =>
+                  block.type === "code" ? (
+                    <pre className="lesson-code" key={index}>
+                      <code>{block.text}</code>
+                    </pre>
+                  ) : block.type === "heading" ? (
+                    <h3 className="lesson-heading" key={index}>
+                      {block.text}
+                    </h3>
+                  ) : (
+                    <p className="concept-prose" key={index}>
+                      {block.text}
+                    </p>
+                  ),
+                )}
+              </div>
+            )}
             <details>
               <summary>원문 근거 확인</summary>
               {detail.sources.map((source, index) => (

@@ -5,6 +5,8 @@ export interface GenerationRequest<T> {
   instructions: string;
   data: unknown;
   schema: Schema<T>;
+  deadlineAt?: number;
+  maxAttempts?: number;
 }
 
 export interface LlmClient {
@@ -17,6 +19,7 @@ export interface AnalysisProgress {
   total: number;
   detail?: string;
   warning?: boolean;
+  incomplete?: boolean;
 }
 
 export interface Source {
@@ -44,6 +47,7 @@ export interface Concept {
   sourceLocation: string;
   evidence: string;
   details?: ConceptDetail[];
+  detailsState?: "pending" | "ready";
   memberConceptIds?: string[];
   citations?: Citation[];
 }

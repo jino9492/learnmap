@@ -5,17 +5,26 @@ import { createOllamaClient } from "./ollama-client.ts";
 import { AiError, ensure } from "./errors.ts";
 import type { TransportOptions } from "./http.ts";
 import { validateConcurrency } from "./batches.ts";
+import type { BatchOptions } from "./batches.ts";
 
-export function analysisOptionsFromEnv(env: Record<string, string | undefined>) {
+interface AnalysisOptions extends BatchOptions {
+  relationConcurrency: number;
+  batchCharacters: number;
+  cacheEnabled: boolean;
+}
+
+export function analysisOptionsFromEnv(env: Record<string, string | undefined>): AnalysisOptions {
   const provider = env.AI_PROVIDER?.trim().toLowerCase() || "openai";
   const concurrencyValue = env.AI_CONCURRENCY?.trim();
   const concurrency = validateConcurrency(concurrencyValue ? Number(concurrencyValue) : provider === "ollama" ? 1 : 2);
+  const relationValue = env.AI_RELATION_CONCURRENCY?.trim();
+  const relationConcurrency = validateConcurrency(relationValue ? Number(relationValue) : concurrencyValue ? concurrency : provider === "ollama" ? 1 : 4);
   const batchValue = env.AI_BATCH_CHARACTERS?.trim();
   const batchCharacters = batchValue ? Number(batchValue) : 6000;
   ensure(Number.isInteger(batchCharacters) && batchCharacters >= 1000 && batchCharacters <= 12000, "AI_BATCH_CHARACTERS must be an integer from 1000 to 12000.", "CONFIG");
   const cacheValue = env.AI_ANALYSIS_CACHE?.trim() || "1";
   ensure(["0", "1"].includes(cacheValue), "AI_ANALYSIS_CACHE must be 0 or 1.", "CONFIG");
-  return { concurrency, batchCharacters, cacheEnabled: cacheValue === "1" };
+  return { concurrency, relationConcurrency, batchCharacters, cacheEnabled: cacheValue === "1" };
 }
 
 export function createConfiguredClient(env: Record<string, string | undefined>, options: TransportOptions = {}): LlmClient {
@@ -46,12 +55,12 @@ export function createConfiguredClient(env: Record<string, string | undefined>, 
   }
 }
 
-const graphTasks = new Set(["concept_extraction", "concept_detail_expansion", "concept_organization", "relation_analysis", "relation_review"]);
+const reasoningTasks = new Set(["relation_analysis", "relation_review", "relation_adjudication"]);
 
 function routeTaskClients(graph: LlmClient, fast: LlmClient): LlmClient {
   return {
     generate<T>(request: GenerationRequest<T>): Promise<T> {
-      return (graphTasks.has(request.name) ? graph : fast).generate(request);
+      return (reasoningTasks.has(request.name) ? graph : fast).generate(request);
     },
   };
 }

@@ -6,6 +6,7 @@ const detail = citation.extend({ name: z.string(), description: z.string() });
 const concept = detail.extend({
   id: z.string(),
   details: z.array(detail).optional(),
+  detailsState: z.enum(["pending", "ready"]).optional(),
   citations: z.array(citation).optional(),
 });
 const relation = z.object({
@@ -37,6 +38,16 @@ export const materialSchema = z.object({
   title: z.string(),
   status: z.string(),
   error: z.unknown().optional(),
+  warnings: z.array(z.string()).optional(),
+  analysisProgress: z
+    .object({
+      stage: z.string(),
+      label: z.string(),
+      percent: z.number().min(0).max(100),
+      completed: z.number().optional(),
+      total: z.number().optional(),
+    })
+    .optional(),
 });
 export const workspaceSchema = z.object({
   subjects: z.array(

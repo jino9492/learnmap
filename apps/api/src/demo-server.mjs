@@ -5,9 +5,11 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { createWorkspace, combineSubject, learningProgress, conceptContentKey } from "./features/workspace/index.mjs";
+import { conceptCitations } from "./features/material-analysis/index.ts";
 import { createConfiguredClient, analysisOptionsFromEnv, extractConcepts, organizeConcepts, analyzeRelations, generateQuestion, publicQuestion, evaluateAnswer, recommendPath, localizeResult, AiError } from "./ai/index.ts";
 import { loadMaterialBytes } from "./features/materials/index.mjs";
 import { createAnalysisCache, analysisCacheScope } from "./features/material-analysis/cache.mjs";
+import { createCheckpoints } from "./features/material-analysis/checkpoints.mjs";
 import { measureAnalysisStage } from "./features/material-analysis/timing.mjs";
 import { validateGraph } from "./features/knowledge-graph/index.ts";
 import { expandConceptDetails } from "./ai/concept-extraction/details.ts";
@@ -93,21 +95,51 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
     };
     await measureAnalysisStage("analysis", async () => {
       const options = analysisOptionsFromEnv(env);
-      const scope = analysisCacheScope(env, options);
+      if (options.cacheEnabled) options.checkpoints = createCheckpoints({
+        directory: storagePath ? `${storagePath}.checkpoints` : undefined,
+        scope: analysisCacheScope(env, {}),
+        onStatus: (status) => report({ kind: 'checkpoint', status }),
+      });
+      const detailMode = env.AI_DETAIL_MODE?.trim() || "on-demand";
+      if (!["on-demand", "eager"].includes(detailMode)) throw new AiError("CONFIG", "AI_DETAIL_MODE must be on-demand or eager.");
+      const scope = analysisCacheScope(env, { ...options, checkpoints: undefined });
       const stage = (name, input, run) => measureAnalysisStage(name, async () => {
         if (!options.cacheEnabled) {
           report({ kind: "cache", stage: name, status: "disabled" });
           return run();
         }
         let cacheStatus;
-        const cached = await cache.run([scope, name, input], async () => {
+        let produced = false;
+        const produce = async () => {
+          produced = true;
           const start = job.events.length;
           const value = await run();
           return { value, warnings: job.events.slice(start).filter((event) => event.kind === 'progress' && event.warning) };
-        }, (status) => {
+        };
+        const validate = (entry) => {
+          if (!entry || !Array.isArray(entry.warnings) || !entry.warnings.every((event) => event?.kind === 'progress' && event.warning && typeof event.detail === 'string')) throw new AiError('FORMAT', 'Invalid saved analysis stage.');
+          if (name === 'concepts' || name === 'organization') {
+            conceptCollectionSchema.parse({ concepts: entry.value });
+            validateGraph({ concepts: entry.value, relations: [] });
+            for (const concept of entry.value) conceptCitations(concept, job.material);
+            if (detailMode === 'eager') validateDetailedExplanations(entry.value);
+          } else {
+            relationCollectionSchema.parse({ relations: entry.value });
+            validateGraph({ concepts: name === 'relations' ? job.concepts : input[1], relations: entry.value });
+          }
+          return entry;
+        };
+        const checkpointed = async () => {
+          const entry = options.checkpoints
+            ? await options.checkpoints.run({ stage: name, input }, produce, validate, (entry) => !entry.warnings.some((event) => event.incomplete))
+            : await produce();
+          if (!produced) entry.warnings.forEach(report);
+          return entry;
+        };
+        const cached = await cache.run([scope, name, input], checkpointed, (status) => {
           cacheStatus = status;
           report({ kind: 'cache', stage: name, status });
-        });
+        }, (entry) => !entry.warnings.some((event) => event.incomplete));
         if (cacheStatus === 'hit' || cacheStatus === 'shared') cached.warnings.forEach(report);
         return cached.value;
       }, report);
@@ -116,14 +148,22 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       job.client = clientFactory((event) => job.events.push({ kind: "request", ...event }));
       const progress = (event) => report({ kind: "progress", ...event });
       job.status = "extracting_concepts";
-      job.detailedConcepts = await stage("concepts", job.material, async () => expandConceptDetails(job.client, await extractConcepts(job.client, job.material, progress, options), job.material, progress, options));
+      job.detailedConcepts = await stage("concepts", [job.material, detailMode], async () => {
+        const concepts = await extractConcepts(job.client, job.material, progress, options);
+        return detailMode === "eager" ? expandConceptDetails(job.client, concepts, job.material, progress, options) : concepts;
+      });
       job.concepts = job.detailedConcepts;
       if (job.mode === "conceptual") {
         job.status = "organizing_concepts";
         job.concepts = await stage("organization", [job.material, job.detailedConcepts], () => organizeConcepts(job.client, job.material, job.detailedConcepts, progress, options));
       }
+      if (detailMode === "on-demand") {
+        job.concepts = job.concepts.map((concept) => ({ ...concept, detailsState: "pending" }));
+        job.detailedConcepts = job.detailedConcepts.map((concept) => ({ ...concept, detailsState: "pending" }));
+      }
       job.status = "analyzing_relations";
-      job.relations = await stage("relations", [job.material, job.concepts], () => analyzeRelations(job.client, job.material, job.concepts, progress, options));
+      const relationOptions = { ...options, concurrency: options.relationConcurrency };
+      job.relations = await stage("relations", [job.material, job.concepts], () => analyzeRelations(job.client, job.material, job.concepts, progress, relationOptions));
       job.status = "localizing";
       const localized = await measureAnalysisStage("localization", () => localizeResult(job.client, {
         graph: { concepts: job.concepts, relations: job.relations },
@@ -135,7 +175,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         conceptCollectionSchema.parse({ concepts: value.graph.concepts });
         relationCollectionSchema.parse({ relations: value.graph.relations });
         validateGraph(value.graph);
-        validateDetailedExplanations(value.graph.concepts);
+        validateDetailedExplanations(value.graph.concepts.filter((concept) => concept.detailsState !== "pending"));
         if (value.detailedConcepts) conceptCollectionSchema.parse({ concepts: value.detailedConcepts });
       } }), report);
       job.concepts = localized.result.graph.concepts;
@@ -153,15 +193,23 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       job.localization = localized.report;
       const subject = subjects.get(job.subjectId);
       if (subject) {
-        job.status = "analyzing_relations";
+        job.status = "linking_subject";
         // Serialize subject updates so simultaneous uploads include the last completed graph.
         const pending = (subjectLinks.get(subject.id) ?? Promise.resolve()).catch(() => {}).then(async () => {
           const available = new Map(analyses);
           available.set(job.id, { ...job, status: 'ready' });
           const combined = combineSubject(subject, available);
           if (new Set(combined.concepts.map((concept) => concept.sourceLocation.split('/')[0])).size > 1) {
+            const changedIds = new Set(combined.concepts.filter((concept) => conceptCitations(concept, combined.material)
+              .some((citation) => citation.sourceLocation.startsWith(`${job.id}/`))).map((concept) => concept.id));
+            const existingRelations = combined.relations.filter((relation) => {
+              const source = combined.concepts.find((concept) => concept.id === relation.source);
+              const target = combined.concepts.find((concept) => concept.id === relation.target);
+              return source.sourceLocation.split('/')[0] === target.sourceLocation.split('/')[0]
+                || (!changedIds.has(relation.source) && !changedIds.has(relation.target));
+            });
             const relations = await stage('subject_relations', [combined.material, combined.concepts, combined.relations],
-              () => analyzeRelations(job.client, combined.material, combined.concepts, progress, { ...options, crossMaterial: true, existingRelations: combined.relations }));
+              () => analyzeRelations(job.client, combined.material, combined.concepts, progress, { ...relationOptions, crossMaterial: true, changedMaterialId: job.id, existingRelations }));
             subject.crossRelations = relations.filter((relation) => {
               const source = combined.concepts.find((concept) => concept.id === relation.source);
               const target = combined.concepts.find((concept) => concept.id === relation.target);
@@ -375,7 +423,10 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
             if (subject) {
               subject.detailOverrides ??= {};
               subject.detailOverrides[concept.id] = { signature: conceptContentKey(concept), details: localized.details };
-            } else concept.details = localized.details;
+            } else {
+              concept.details = localized.details;
+              concept.detailsState = "ready";
+            }
             await workspace.save();
             send(response, 200, { concept: localized, localization });
           } else {

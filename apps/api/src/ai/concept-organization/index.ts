@@ -8,6 +8,23 @@ import { conceptCitations, organizationBatches, organizationSummary } from "../.
 import { mapBatches, validateConcurrency } from "../core/batches.ts";
 import type { BatchOptions } from "../core/batches.ts";
 
+function mergeExactConcepts(concepts: Concept[]): Concept[] {
+  const merged = new Map<string, Concept>();
+  const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
+  for (const concept of concepts) {
+    const key = JSON.stringify([normalize(concept.name), normalize(concept.description)]);
+    const target = merged.get(key);
+    if (!target) { merged.set(key, structuredClone(concept)); continue; }
+    target.memberConceptIds = [...new Set([...(target.memberConceptIds ?? [target.id]), ...(concept.memberConceptIds ?? [concept.id])])];
+    const citations = new Map([target, ...(target.citations ?? []), concept, ...(concept.citations ?? [])]
+      .map(({ sourceLocation, evidence }) => [JSON.stringify([sourceLocation, evidence]), { sourceLocation, evidence }]));
+    target.citations = [...citations.values()];
+    const details = [target, concept].flatMap((item) => item.details ?? [{ name: item.name, description: item.description, sourceLocation: item.sourceLocation, evidence: item.evidence }]);
+    target.details = [...new Map(details.map((detail) => [JSON.stringify(detail), detail])).values()];
+  }
+  return [...merged.values()];
+}
+
 export async function organizeConcepts(client: LlmClient, input: unknown, detailedConcepts: Concept[], onProgress?: (progress: AnalysisProgress) => void, options: BatchOptions = {}): Promise<Concept[]> {
   validateConcurrency(options.concurrency);
   const material = validateMaterial(input);
@@ -15,8 +32,10 @@ export async function organizeConcepts(client: LlmClient, input: unknown, detail
   validateGraph({ concepts: detailedConcepts, relations: [] });
   const original = new Map(detailedConcepts.map((concept) => [concept.id, concept]));
   for (const concept of detailedConcepts) conceptCitations(concept, material);
-  let pool = detailedConcepts.map((concept) => ({ ...concept, memberConceptIds: [concept.id] }));
-  for (let round = 1; round <= 3; round++) {
+  let pool = mergeExactConcepts(detailedConcepts.map((concept) => ({ ...concept, memberConceptIds: [concept.id] })));
+  // Organize each item once; exact cross-batch duplicates do not need another model round.
+  const round = 1;
+  {
     const batches = organizationBatches(pool);
     let completed = 0;
     onProgress?.({ stage: "organization", completed: 0, total: batches.length, detail: `Core concept organization, round ${round}.` });
@@ -79,10 +98,7 @@ export async function organizeConcepts(client: LlmClient, input: unknown, detail
       } else onProgress?.({ stage: "organization", completed: ++completed, total: batches.length, detail: `Core concept organization, round ${round}.` });
       return next;
     });
-    const next = results.flat();
-    const previousCount = pool.length;
-    pool = next.map((concept, index) => ({ ...concept, id: `o${round}:${index + 1}`, memberConceptIds: concept.memberConceptIds ?? [concept.id] }));
-    if (batches.length === 1 || pool.length >= previousCount) break;
+    pool = mergeExactConcepts(results.flat());
   }
   return pool.map((concept, index) => ({ ...concept, id: `k${index + 1}` }));
 }

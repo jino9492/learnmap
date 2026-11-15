@@ -8,7 +8,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   errorMessage,
@@ -28,6 +28,7 @@ import {
 import { Modal, NotFound, FeedbackBanners } from "../components/Shared";
 import { SidebarMaterials } from "../features/materials/components/SidebarMaterials";
 import { UploadDialog } from "../features/materials/components/MaterialsPage";
+import { AnalysisProgress } from "../components/AnalysisProgress";
 const remember = (id: string) => {
   try {
     localStorage.setItem("learnmap.subjectId", id);
@@ -37,6 +38,7 @@ const remember = (id: string) => {
 };
 
 export const SubjectLayout = () => {
+  const queryClient = useQueryClient();
   const { subjectId = "" } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -226,16 +228,25 @@ export const SubjectLayout = () => {
           <div>
             <strong>학습 지도를 만들고 있어요</strong>
             <span role="status">
-              {active.length}개 자료 분석 중 · {active[0].title}
+              현재 생성 작업 {active.length}건 · 자료별 진행률
             </span>
           </div>
-          <progress aria-label="자료 분석 중" />
           <button
             className="secondary compact"
-            onClick={() => void query.refetch()}
+            onClick={() => {
+              void query.refetch();
+              void queryClient.invalidateQueries({
+                queryKey: ["analysis-progress"],
+              });
+            }}
           >
             상태 새로고침
           </button>
+          <ul className="analysis-materials" aria-label="자료별 분석 진행 상황">
+            {active.map((material) => (
+              <AnalysisProgress key={material.id} material={material} />
+            ))}
+          </ul>
         </div>
       )}
       {upload && <UploadDialog onClose={() => setUpload(false)} />}
