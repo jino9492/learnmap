@@ -232,6 +232,45 @@ export const GraphPage = () => {
       },
       { replace: true },
     );
+  const focusReturnView = useRef<{
+    subjectId: string;
+    view: "all" | "group";
+  } | null>(null);
+  const toggleFocus = () => {
+    if (view !== "focus") {
+      focusReturnView.current = {
+        subjectId: subject.id,
+        view: view === "all" ? "all" : "group",
+      };
+      changeParam("view", "focus");
+      return;
+    }
+    const returnView =
+      focusReturnView.current?.subjectId === subject.id
+        ? focusReturnView.current.view
+        : large
+          ? "group"
+          : "all";
+    const selectedGroup = groups.find((group) =>
+      group.memberIds.includes(canonicalSelected ?? ""),
+    );
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.set(
+          "view",
+          returnView === "group" && !selectedGroup ? "groups" : returnView,
+        );
+        if (returnView === "group" && selectedGroup)
+          next.set("group", selectedGroup.id);
+        else next.delete("group");
+        next.delete("q");
+        next.delete("filter");
+        return next;
+      },
+      { replace: true },
+    );
+  };
   return (
     <section className="map-view">
       <div className="map-main">
@@ -364,12 +403,23 @@ export const GraphPage = () => {
             전체 개념
           </button>
           <button
-            className="secondary"
+            className="graph-focus-toggle"
             disabled={!selectedId}
             aria-pressed={view === "focus"}
-            onClick={() => changeParam("view", "focus")}
+            onClick={toggleFocus}
+            title={
+              !selectedId
+                ? "개념을 먼저 선택해 주세요"
+                : view === "focus"
+                  ? "주변 보기 해제 · 이전 보기로 돌아가기"
+                  : "선택한 개념과 연결된 개념만 보기"
+            }
           >
-            선택 개념 주변
+            <span className="graph-focus-switch" aria-hidden="true" />
+            <span>선택 개념 주변</span>
+            <span className="graph-focus-state" aria-hidden="true">
+              {view === "focus" ? "켜짐" : "꺼짐"}
+            </span>
           </button>
           <button
             className="secondary graph-organize"

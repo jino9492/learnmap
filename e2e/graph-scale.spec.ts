@@ -287,6 +287,48 @@ test("focus navigation keeps the selected node's screen position and zoom, inclu
     await expect(page).toHaveURL(new RegExp(`concept=${conceptId}&view=focus`));
     await expectPreserved(conceptId, before);
   }
+  await page
+    .getByRole("button", { name: "선택 개념 주변", exact: true })
+    .click();
+  await expect(page.locator("#graph [data-concept]")).toHaveCount(92);
+  await expect(
+    page.getByRole("button", { name: "전체 개념", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("leaving focus from group views restores the selected concept's group", async ({
+  page,
+}) => {
+  await page.goto(`/subjects/${id}/graph`);
+  const nodes = page.locator("#graph [data-concept]");
+  await nodes.first().press("Enter");
+  await expect(page).toHaveURL(/view=group/);
+  const groupId = new URL(page.url()).searchParams.get("group");
+  const groupConceptIds = await nodes.evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("data-concept")),
+  );
+  await nodes.first().press("Enter");
+  const focus = page.getByRole("button", {
+    name: "선택 개념 주변",
+    exact: true,
+  });
+  for (const fromOverview of [false, true]) {
+    if (fromOverview)
+      await page
+        .getByRole("button", { name: "그룹 개요", exact: true })
+        .click();
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "true");
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(page).toHaveURL(/view=group/);
+    expect(new URL(page.url()).searchParams.get("group")).toBe(groupId);
+    expect(
+      await nodes.evaluateAll((elements) =>
+        elements.map((element) => element.getAttribute("data-concept")),
+      ),
+    ).toEqual(groupConceptIds);
+  }
 });
 
 test("mobile group navigation exposes every group without shrinking all concepts", async ({

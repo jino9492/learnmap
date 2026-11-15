@@ -116,6 +116,60 @@ main:focus {
   color: #225ec9;
   border-color: #88adf3;
 }
+.graph-navigation .graph-focus-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+  background: #faf8ff;
+  color: #6d28d9;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.graph-navigation .graph-focus-toggle:hover:not(:disabled) {
+  background: #f3edff;
+  border-color: #a78bfa;
+}
+.graph-navigation .graph-focus-toggle[aria-pressed="true"] {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-color: #a78bfa;
+}
+.graph-focus-toggle:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 3px;
+}
+.graph-focus-switch {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 28px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #c4b5dc;
+}
+.graph-focus-switch::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px #00000020;
+}
+.graph-focus-toggle[aria-pressed="true"] .graph-focus-switch {
+  background: #7c3aed;
+}
+.graph-focus-toggle[aria-pressed="true"] .graph-focus-switch::before {
+  transform: translateX(12px);
+}
+.graph-focus-state {
+  font-size: 11px;
+  font-weight: 500;
+}
 .graph-group-list {
   display: none;
 }
