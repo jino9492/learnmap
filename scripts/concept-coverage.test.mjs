@@ -7,7 +7,7 @@ import { join, dirname, basename, resolve } from 'node:path';
 import { extractConcepts, organizeConcepts } from '../apps/api/src/ai/index.ts';
 import { expandConceptDetails } from '../apps/api/src/ai/concept-extraction/details.ts';
 import { AiError } from '../apps/api/src/ai/core/errors.ts';
-import { explanationBlocks } from '../apps/web/explanation.js';
+import { explanationBlocks } from '../apps/web/explanation.ts';
 import { questionTargets } from '../apps/api/src/ai/question-generation/index.ts';
 import { createWorkspace, combineSubject, learningProgress, conceptContentKey } from '../apps/api/src/features/workspace/index.mjs';
 import { createDemoServer } from '../apps/api/src/demo-server.mjs';

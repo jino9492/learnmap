@@ -1,0 +1,4 @@
+/* Visual styles are owned by the original stylesheet in apps/web/styles.css. */
+main:focus {
+  outline: none;
+}

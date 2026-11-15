@@ -2,6 +2,29 @@
 
 AI가 생성하는 개념명·설명·문제·채점 피드백·학습 경로는 원문 언어와 관계없이 한국어로 출력하도록 공통 지침을 적용합니다. 출력 전에 [언어 감지와 한국어 번안](docs/korean-localization.md)을 수행하고, 번안 실패 시 원래 결과와 안내를 제공합니다. JSON 키와 enum, ID, 원문 인용은 그대로 유지합니다. [분석 결과 JSON 구조와 분석 시간 단축 설계](docs/ANALYSIS.md)를 참고하세요.
 
+## React 프런트엔드와 라우팅
+
+웹 UI는 `apps/web/src`의 React + TypeScript 애플리케이션입니다. Vite로 빌드하고 React Router의 BrowserRouter로 페이지를 전환합니다. 서버 데이터는 TanStack Query로 조회·갱신·분석 상태 폴링을 관리하며, API 응답은 Zod로 검증합니다. 기존 SVG 그래프 엔진과 백엔드 AI/API는 재사용합니다.
+
+- `app/`: 라우터, 과목 공통 레이아웃, 첫 진입 페이지
+- `features/`: 자료 관리, 그래프, 개념 상세, 문제 풀이, 학습 경로, 학습 기록의 페이지 컴포넌트
+- `components/`, `hooks/`, `utils/`: 공통 UI, 컨텍스트·조회 갱신 훅, API 검증 및 URL 함수
+
+페이지 주소는 `/subjects/:subjectId/graph`, `/materials`, `/concepts/:conceptId`, `/concepts/:conceptId/quiz`, `/learning-path`, `/history` 형식입니다. 뒤의 경로도 모두 `/subjects/:subjectId` 아래에 위치합니다. 그래프 선택 개념·검색·필터는 쿼리 문자열에 보관합니다. 서버는 UI 경로의 직접 접속과 새로고침에 빌드된 HTML을 반환하고, 없는 과목·개념은 오류 페이지를 표시합니다. 현재 탭의 문제 묶음·답안·평가 결과는 sessionStorage에 보관하므로 페이지 이동과 새로고침 후 이어서 풀 수 있습니다. 서버가 해당 문항을 폐기했다면 새 문제를 생성해야 합니다.
+
+```powershell
+npm install
+npm start          # React 빌드 후 API와 웹 UI 실행: http://127.0.0.1:8787
+npm run dev        # API + Vite 개발 서버 실행: http://127.0.0.1:5173
+npm run typecheck  # API 및 React TypeScript 검사
+npm test           # 빌드 + 기존 단위·통합 테스트
+npx playwright install chromium # 브라우저 테스트 최초 준비
+npm run test:e2e   # 빌드 + 독립 fixture 서버에서 브라우저 통합 테스트
+npm run format:check
+```
+
+개발 서버는 API 요청을 로컬 백엔드로 프록시합니다. `DEMO_PORT`로 API 포트를 바꿀 수 있으며 Vite 포트는 5173입니다. `npm run dev` 전에 같은 API 포트에서 실행 중인 기존 서버를 종료하세요. 기존 단독 JSON 데모는 백엔드의 `/demo`에 유지합니다. 브라우저 테스트는 실제 AI와 `.learnmap/workspace.json`을 사용하지 않습니다.
+
 ## 웹사이트 실행
 
 큰 AI 입력은 지침과 응답 스키마까지 포함한 요청 예산에 따라 분할합니다. 답안 점수는 한 번 확정하고 연결 개념을 나누어 추가 분석하며, 경로는 전체 선수 순서를 검증한 뒤 구간별 설명을 합칩니다. 추가 설명 일부가 실패해도 완료된 채점과 검증된 결과를 보존하고 미완료 부분을 표시합니다. 자세한 동작과 검증 한계는 [분할 처리 설계](docs/partitioning.md)를 참고하세요.
@@ -14,7 +37,7 @@ Ollama에서는 `OLLAMA_MODEL=deepseek-r1:14b`, `OLLAMA_FAST_MODEL=qwen2.5:7b`�
 npm start
 ```
 
-[LearnMap 열기](http://127.0.0.1:8787)에서 과목을 만들고 PDF·TXT·Markdown 자료를 추가할 수 있습니다. Figma의 지식 그래프, 개인화 학습 경로, 문제 풀이 디자인을 기존 JavaScript 웹 구조와 외부 CSS로 구현했습니다. 새 의존성은 추가하지 않았습니다.
+[LearnMap 열기](http://127.0.0.1:8787)에서 과목을 만들고 PDF·TXT·Markdown 자료를 추가할 수 있습니다. Figma의 지식 그래프, 개인화 학습 경로, 문제 풀이 디자인을 React 기능별 페이지와 기존 외부 CSS로 구현했습니다. React Router, TanStack Query, Zod와 Vite를 사용합니다.
 
 - **자료 관리:** 과목별 업로드, 진행 상태 및 자동 재연결, 원본 보기, 삭제, 재분석을 지원합니다. 재분석 실패 시 이전의 성공한 그래프를 복구합니다.
 - **지식 그래프:** 개념 선택, 설명 및 선수 개념, 원본 페이지 연결, 검색 및 이해도 필터, 이동·확대·축소를 지원합니다. 개념 노드와 과목 노드를 드래그해 배치를 바꾸면 연결선이 실시간으로 따라갑니다. 빈 공간을 드래그하면 지도 전체가 이동합니다. 배치는 현재 탭에서 과목별로 유지되며 검색·필터·이해도 갱신 후에도 보존됩니다. 페이지를 새로고침하면 초기 배치로 돌아갑니다. 키보드로 노드를 선택할 수 있으며, 노드에 초점을 맞추고 `Shift`+방향키로 노드를 움직일 수 있습니다. 방향키는 지도 이동, `+`·`-`는 확대·축소, `0`은 이동한 노드를 포함한 전체 보기에 사용합니다.
@@ -26,7 +49,7 @@ npm start
 
 본문이 이미지이고 선택 가능한 텍스트가 부족한 PDF 페이지는 렌더링 후 Windows 한국어 OCR로 읽습니다. Windows 한국어 OCR 언어 팩이 필요하며, 파일은 OCR을 위해 외부 서비스에 전송하지 않습니다. OCR을 사용할 수 없거나 본문을 거의 읽지 못하면 분석을 중단하고 안내합니다. OCR은 한글·수식·코드에 오인식이 생길 수 있으므로 가능한 경우 텍스트를 포함한 원본 PDF를 사용하세요. 핵심 개념 모드는 정해진 개수로 압축하지 않고 독립적으로 학습·평가할 수 있는 단위를 유지합니다. 과목에 자료를 추가하거나 재분석하면 파일 사이의 의미 관계도 분석해 저장합니다. 파일 쌍과 개념 수가 늘면 추가 AI 요청이 증가합니다. 기존 자료에는 서버 재시작 후 **재분석**을 실행해야 변경 사항이 반영됩니다.
 
-별도 프런트엔드 빌드 과정은 필요하지 않습니다. `npm run typecheck`는 API의 TypeScript 코드에 엄격한 타입 검사를 수행합니다. `npm test`는 `scripts/concept-coverage.test.mjs`의 상세 내용·문제 묶음·재평가·저장 복원 검증 및 `tests/`의 AI/API 테스트와 `tests/workspace.test.mjs`의 웹 통합 검증을 실행합니다. AI 테스트는 fixture 응답을 사용하므로 외부 API 비용이 발생하지 않습니다.
+`npm start`가 프런트엔드 빌드를 자동으로 수행합니다. `npm run typecheck`는 API와 React 코드에 엄격한 타입 검사를 수행합니다. `npm test`는 `scripts/concept-coverage.test.mjs`의 상세 내용·문제 묶음·재평가·저장 복원 검증 및 `tests/`의 AI/API 테스트와 `tests/workspace.test.mjs`의 웹 통합 검증을 실행합니다. AI 테스트는 fixture 응답을 사용하므로 외부 API 비용이 발생하지 않습니다.
 
 ## HTML 데모
 

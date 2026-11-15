@@ -8,3 +8,7 @@ tests/
 docs/
 
 AGENT.md
+
+apps/web/dist/
+playwright-report/
+test-results/

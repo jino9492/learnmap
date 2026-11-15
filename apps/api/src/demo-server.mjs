@@ -10,6 +10,7 @@ import { createAnalysisCache, analysisCacheScope } from "./features/material-ana
 import { measureAnalysisStage } from "./features/material-analysis/timing.mjs";
 import { validateGraph } from "./features/knowledge-graph/index.ts";
 import { expandConceptDetails } from "./ai/concept-extraction/details.ts";
+import { webAsset } from './web-assets.mjs';
 import { mapBatches } from "./ai/core/batches.ts";
 import { questionTargets, validateQuestion } from "./ai/question-generation/index.ts";
 import { conceptCollectionSchema, relationCollectionSchema, evaluationSchema, recommendationSchema } from "./ai/core/schemas.ts";
@@ -61,11 +62,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
   const cache = createAnalysisCache();
   const subjectLinks = new Map();
   const assets = new Map([
-    ["/", { url: new URL("../../web/index.html", import.meta.url), type: "text/html; charset=utf-8" }],
     ["/demo", { url: new URL("../../demo/index.html", import.meta.url), type: "text/html; charset=utf-8" }],
-    ["/web.js", { url: new URL("../../web/app.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
-    ["/explanation.js", { url: new URL("../../web/explanation.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
-    ["/graph.js", { url: new URL("../../web/graph.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
     ["/styles.css", { url: new URL("../../web/styles.css", import.meta.url), type: "text/css; charset=utf-8" }],
     ["/assets/avatar.svg", { url: new URL("../../web/assets/avatar.svg", import.meta.url), type: "image/svg+xml" }],
     ["/app.js", { url: new URL("../../demo/app.js", import.meta.url), type: "text/javascript; charset=utf-8" }],
@@ -195,6 +192,15 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       if (!allowedHosts.includes(request.headers.host)) throw new HttpError(403, "Local demo requests only.");
       if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) throw new HttpError(403, "Cross-origin requests are not allowed.");
       const url = new URL(request.url, `http://${request.headers.host}`);
+      const compiled = request.method === 'GET' ? await webAsset(url.pathname) : null;
+      if (compiled) {
+        response.writeHead(200, {
+          'Content-Type': compiled.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        });
+        response.end(compiled.content);
+        return;
+      }
       const asset = assets.get(url.pathname);
       if (request.method === "GET" && asset) {
         const content = await readFile(asset.url);
