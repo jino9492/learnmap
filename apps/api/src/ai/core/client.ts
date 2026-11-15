@@ -2,6 +2,7 @@ import type { LlmClient } from "./contracts.ts";
 import { AiError, ensure } from "./errors.ts";
 import { createJsonClient, record } from "./http.ts";
 import type { TransportOptions } from "./http.ts";
+import { openAiSchema } from "./openai-schema.ts";
 
 export type { UsageEvent } from "./http.ts";
 
@@ -31,7 +32,7 @@ function responseText(value: unknown): { text: string; usage: unknown } {
 
 export function createOpenAiClient(options: ClientOptions): LlmClient {
   ensure(options.apiKey.trim() && options.model.trim(), "Set OPENAI_API_KEY and OPENAI_MODEL.", "CONFIG");
-  return createJsonClient({
+  const client = createJsonClient({
     provider: "openai",
     model: options.model,
     url: "https://api.openai.com/v1/responses",
@@ -46,4 +47,9 @@ export function createOpenAiClient(options: ClientOptions): LlmClient {
     },
     output: responseText,
   }, options);
+  return {
+    generate(request) {
+      return client.generate({ ...request, schema: openAiSchema(request.schema) });
+    },
+  };
 }

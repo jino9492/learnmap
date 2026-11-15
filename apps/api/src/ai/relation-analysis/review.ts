@@ -68,7 +68,9 @@ export async function reviewRelations(client: LlmClient, material: Material, con
     const hierarchy = entries[0].type === "PARENT_CHILD";
     const schema = reviewSchema(entries.map((entry) => entry.id), [...ids], [...quotes.values()].map((quote) => quote.id), hierarchy);
     return { name: "relation_review", instructions: prompts.relationReview,
-      data: { concepts: nodesWithEvidence, candidates: entries.map(({ id, source, target, type }) => ({ id, type, conceptIds: [source, target] })),
+      data: { concepts: nodesWithEvidence, candidates: entries.map(({ id, source, target, type }) => ({ id, type, conceptIds: [source, target],
+        allowedEvidenceIds: [...new Set(nodesWithEvidence.filter((node) => node.id === source || node.id === target).flatMap((node) => node.evidenceIds))],
+      })),
         evidence: [...quotes.values()], roles: hierarchy ? "broaderConceptId -> narrowerConceptId" : "prerequisiteConceptId -> dependentConceptId" }, schema };
   };
   const batches = ["PARENT_CHILD", "PREREQUISITE"].flatMap((type) => partitionRequests(unresolved.filter((candidate) => candidate.type === type), build));
@@ -78,9 +80,16 @@ export async function reviewRelations(client: LlmClient, material: Material, con
       const response = request.schema.parse(await client.generate(request));
       ensure(new Set(response.decisions.map((decision) => decision.candidateId)).size === entries.length,
         "Relation review must decide every candidate exactly once.", "FORMAT");
-      return { entries, response, request };
+      // Validate within runPartition so mixed-up batch evidence can recover in smaller requests.
+      for (const decision of response.decisions) {
+        if (decision.verdict === "REJECT" || !decision.evidenceIds.length) continue;
+        const candidate = request.data.candidates.find((entry) => entry.id === decision.candidateId)!;
+        const allowed = new Set(candidate.allowedEvidenceIds);
+        ensure(decision.evidenceIds.every((id) => allowed.has(id)), "Review evidence must belong to the candidate's endpoints.", "FORMAT");
+      }
+      return { entries, response };
     });
-    for (const { entries, response, request } of results) {
+    for (const { entries, response } of results) {
       for (const decision of response.decisions) {
         const candidate = entries.find((entry) => entry.id === decision.candidateId)!;
         if (decision.verdict === "REJECT" || !decision.evidenceIds.length) {
@@ -88,9 +97,6 @@ export async function reviewRelations(client: LlmClient, material: Material, con
             detail: `관계 검증에서 제외: ${candidate.source} -> ${candidate.target}: ${decision.reason}` });
           continue;
         }
-        const allowed = new Set(request.data.concepts.filter((node) => node.id === candidate.source || node.id === candidate.target)
-          .flatMap((node) => node.evidenceIds));
-        ensure(decision.evidenceIds.every((id) => allowed.has(id)), "Review evidence must belong to the candidate's endpoints.", "FORMAT");
         const sourceId = decision.broaderConceptId ?? decision.prerequisiteConceptId;
         const targetId = decision.narrowerConceptId ?? decision.dependentConceptId;
         ensure(sourceId && targetId && sourceId !== targetId && [candidate.source, candidate.target].includes(sourceId)

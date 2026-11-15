@@ -104,11 +104,36 @@ test('review rejects duplicate candidate decisions and cannot substitute another
       }
       else if (request.data.candidates.some((candidate) => candidate.id === 'r1')) {
         const other = request.data.evidence.find((entry) => entry.text === extra.evidence);
-        response.decisions[0].evidenceIds = [other.id];
+        response.decisions[0].evidenceIds = [other?.id ?? 'invented'];
       }
       return response;
     } }, input, [...reviewConcepts, extra], edges), { code: 'FORMAT' });
   }
+});
+
+test('mixed-up batch review evidence is retried in isolated pairs without accepting the invalid review', async () => {
+  const nodes = ['a', 'b', 'c', 'd'].map((id) => ({ id, name: id, description: `${id} 설명`, sourceLocation: id, evidence: `${id} 원문 근거` }));
+  const input = { id: 'separate', title: '근거 분리', sources: nodes.map((node) => ({ location: node.sourceLocation, text: node.evidence })) };
+  const edges = [
+    { source: 'a', target: 'b', type: 'PREREQUISITE', reason: '초기 후보' },
+    { source: 'c', target: 'd', type: 'PREREQUISITE', reason: '초기 후보' },
+  ];
+  const sizes = [];
+  const output = await reviewRelations({ async generate(request) {
+    sizes.push(request.data.candidates.length);
+    return { decisions: request.data.candidates.map((candidate, index) => {
+      const allowed = request.data.concepts.filter((node) => candidate.conceptIds.includes(node.id)).flatMap((node) => node.evidenceIds);
+      assert.deepEqual(candidate.allowedEvidenceIds, [...new Set(allowed)]);
+      return {
+        candidateId: candidate.id, verdict: 'SUPPORTED',
+        evidenceIds: request.data.candidates.length > 1 ? request.data.candidates[1 - index].allowedEvidenceIds : candidate.allowedEvidenceIds,
+        prerequisiteConceptId: candidate.conceptIds[0], dependentConceptId: candidate.conceptIds[1],
+        reason: request.data.candidates.length > 1 ? '잘못 섞인 검토' : '분리 검토에서 확인한 관계',
+      };
+    }) };
+  } }, input, nodes, edges);
+  assert.deepEqual(sizes, [2, 1, 1]);
+  assert.deepEqual(output, edges.map((edge) => ({ ...edge, reason: '분리 검토에서 확인한 관계' })));
 });
 
 test('hierarchy cycles are rejected independently of prerequisite cycles, including after reversal', async () => {
