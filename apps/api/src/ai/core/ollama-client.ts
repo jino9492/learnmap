@@ -41,6 +41,7 @@ export function createOllamaClient(options: OllamaOptions): LlmClient {
   ensure(Number.isInteger(contextLength) && contextLength >= 2048 && contextLength <= 131072, "OLLAMA_CONTEXT_LENGTH must be an integer from 2048 to 131072.", "CONFIG");
   return createJsonClient({
     provider: "ollama",
+    model: options.model,
     url: localEndpoint(options.baseUrl ?? "http://127.0.0.1:11434"),
     headers: {},
     contextRecovery: { initialTokens: contextLength, maxTokens: Math.max(contextLength, 32768), outputTokens: 6000 },

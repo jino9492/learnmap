@@ -1,4 +1,5 @@
 import { expandConceptDetails } from "./ai/concept-extraction/details.ts";
+import { logAiEvent } from "./ai/core/logging.ts";
 import { validateDetailedExplanations } from "./ai/concept-extraction/quality.ts";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
@@ -60,7 +61,10 @@ async function main() {
     });
   }
   stderr.write("Extracting concepts...\n");
-  const reportProgress = ({ stage, completed, total, detail }) => stderr.write(`${stage}: ${completed}/${total} batches${detail ? ` (${detail})` : ""}\n`);
+  const reportProgress = ({ stage, completed, total, detail }) => {
+    logAiEvent({ kind: "progress", stage, completed, total, detail });
+    stderr.write(`${stage}: ${completed}/${total} batches${detail ? ` (${detail})` : ""}\n`);
+  };
   const options = analysisOptionsFromEnv(isDemo ? { AI_CONCURRENCY: "1" } : process.env);
   const detailedConcepts = await measureAnalysisStage("concepts", async () => expandConceptDetails(client, await extractConcepts(client, material, reportProgress, options), material, reportProgress, options), reportTiming);
   const initialConcepts = mode === "conceptual" ? await measureAnalysisStage("organization", () => organizeConcepts(client, material, detailedConcepts, reportProgress, options), reportTiming) : detailedConcepts;
@@ -97,6 +101,7 @@ async function main() {
 
 try { await main(); }
 catch (error) {
+  logAiEvent({ kind: "cli", outcome: "failed", code: error instanceof AiError ? error.code : "INTERNAL" });
   stderr.write(`${error instanceof AiError ? `${error.code}: ${error.message}` : "Experiment failed unexpectedly."}\n`);
   process.exitCode = 1;
 }

@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 node_modules/
+/logs/
 .learnmap/
 output/
 tests/

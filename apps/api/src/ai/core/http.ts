@@ -1,6 +1,8 @@
 import type { GenerationRequest, LlmClient } from "./contracts.ts";
 import { AiError, ensure } from "./errors.ts";
 import { isRecord } from "./schema.ts";
+import { randomUUID } from "node:crypto";
+import { logAiEvent } from "./logging.ts";
 
 export interface UsageEvent {
   provider: string;
@@ -29,6 +31,7 @@ export interface TransportOptions {
 
 export interface ProviderAdapter {
   provider: string;
+  model?: string;
   url: string;
   headers: Record<string, string>;
   body(request: GenerationRequest<unknown>, contextTokens?: number): unknown;
@@ -80,6 +83,11 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
   const sleep = options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   return {
     async generate<T>(request: GenerationRequest<T>): Promise<T> {
+      const requestId = randomUUID();
+      const report = (event: UsageEvent) => {
+        logAiEvent({ kind: "request", requestId, outcome: event.error ? (event.retryInMs !== undefined ? "retrying" : "failed") : "completed", ...event });
+        options.onEvent?.(event);
+      };
       let body = JSON.stringify(adapter.body(request));
       let contextTokens = adapter.contextRecovery?.initialTokens;
       let recoveredContext = false;
@@ -88,7 +96,8 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         const startedAt = Date.now();
         let phase: "headers" | "body" | "validation" = "headers";
-        const event = { provider: adapter.provider, task: request.name, attempt, timeoutMs, requestCharacters: body.length };
+        const event = { provider: adapter.provider, model: adapter.model, task: request.name, attempt, timeoutMs, requestCharacters: body.length };
+        logAiEvent({ kind: "request", requestId, outcome: "started", ...event });
         const diagnostics = () => ({ elapsedMs: Date.now() - startedAt, phase });
         try {
           const response = await (options.fetcher ?? fetch)(adapter.url, {
@@ -107,18 +116,18 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
               if (expanded <= recovery.maxTokens) {
                 recoveredContext = true;
                 contextTokens = expanded;
-                options.onEvent?.({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}`, retryInMs: 0 });
+                report({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}`, retryInMs: 0 });
                 body = JSON.stringify(adapter.body(request, expanded));
                 continue;
               }
             }
             if (retryable && attempt < maxAttempts && delay <= 60000) {
-              options.onEvent?.({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}`, retryInMs: delay });
+              report({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}`, retryInMs: delay });
               clearTimeout(timer);
               await sleep(delay);
               continue;
             }
-            options.onEvent?.({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}` });
+            report({ ...event, ...diagnostics(), ...provider, error: `HTTP_${response.status}` });
             const guidance = provider.inputTokens !== undefined && provider.contextTokens !== undefined
               ? ` Input uses ${provider.inputTokens} tokens but the active context is ${provider.contextTokens}. Increase OLLAMA_CONTEXT_LENGTH or reduce AI_BATCH_CHARACTERS.`
               : response.status === 503 ? " The provider is temporarily unavailable; retry later or select another model."
@@ -136,11 +145,12 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
           try { raw = JSON.parse(responseBody); }
           catch { throw new AiError("FORMAT", "The provider returned invalid JSON."); }
           const result = adapter.output(raw);
-          options.onEvent?.({ ...event, ...diagnostics(), usage: result.usage });
           let parsed: unknown;
           try { parsed = JSON.parse(result.text); }
           catch { throw new AiError("FORMAT", "The model returned invalid JSON."); }
-          return request.schema.parse(parsed);
+          const validated = request.schema.parse(parsed);
+          report({ ...event, ...diagnostics(), usage: result.usage });
+          return validated;
         } catch (error) {
           const failure = error instanceof AiError ? error : new AiError(
             controller.signal.aborted ? "TIMEOUT" : "CONNECTION",
@@ -149,7 +159,7 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
           const formatRetry = failure.code === "FORMAT";
           const canRetry = (formatRetry || failure.code === "TIMEOUT" || failure.code === "CONNECTION") && attempt < Math.min(maxAttempts, 2);
           const delay = formatRetry ? 0 : 2000 + Math.floor(Math.random() * 1000);
-          options.onEvent?.({ ...event, ...diagnostics(), error: failure.code, ...(canRetry ? { retryInMs: delay } : {}) });
+          report({ ...event, ...diagnostics(), error: failure.code, ...(canRetry ? { retryInMs: delay } : {}) });
           if (canRetry) {
             clearTimeout(timer);
             if (formatRetry) body = JSON.stringify(adapter.body({ ...request,

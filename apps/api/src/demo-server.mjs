@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { logAiEvent } from "./ai/core/logging.ts";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
@@ -86,7 +87,10 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
   }
 
   async function analyze(job, name, bytes, previous = null) {
-    const report = (event) => job.events.push(event);
+    const report = (event) => {
+      job.events.push(event);
+      if (event.kind !== "timing" && event.kind !== "request") logAiEvent({ ...event, analysisId: job.id });
+    };
     await measureAnalysisStage("analysis", async () => {
       const options = analysisOptionsFromEnv(env);
       const scope = analysisCacheScope(env, options);
@@ -110,7 +114,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       job.status = "extracting_text";
       job.material = await measureAnalysisStage("text", () => loadMaterialBytes(name, bytes), report);
       job.client = clientFactory((event) => job.events.push({ kind: "request", ...event }));
-      const progress = (event) => job.events.push({ kind: "progress", ...event });
+      const progress = (event) => report({ kind: "progress", ...event });
       job.status = "extracting_concepts";
       job.detailedConcepts = await stage("concepts", job.material, async () => expandConceptDetails(job.client, await extractConcepts(job.client, job.material, progress, options), job.material, progress, options));
       job.concepts = job.detailedConcepts;
@@ -174,6 +178,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       job.status = "failed";
       const failedStage = job.events.findLast((event) => event.kind === 'timing' && event.outcome === 'failed' && event.stage !== 'analysis')?.stage;
       job.error = { ...errorInfo(error), ...(failedStage ? { stage: failedStage } : {}) };
+      logAiEvent({ kind: "analysis", outcome: "failed", analysisId: job.id, ...job.error });
     });
     if (job.status === "failed" && previous) { Object.assign(job, previous); job.status = "ready"; }
     const subject = subjects.get(job.subjectId);

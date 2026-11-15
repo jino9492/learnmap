@@ -41,6 +41,7 @@ export function createGeminiClient(options: GeminiOptions): LlmClient {
   ensure(/^[a-zA-Z0-9._-]+$/.test(model), "Invalid Gemini model ID.", "CONFIG");
   return createJsonClient({
     provider: "gemini",
+    model: options.model,
     url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     headers: { "x-goog-api-key": options.apiKey },
     body(request) {

@@ -33,6 +33,7 @@ export function createOpenAiClient(options: ClientOptions): LlmClient {
   ensure(options.apiKey.trim() && options.model.trim(), "Set OPENAI_API_KEY and OPENAI_MODEL.", "CONFIG");
   return createJsonClient({
     provider: "openai",
+    model: options.model,
     url: "https://api.openai.com/v1/responses",
     headers: { Authorization: `Bearer ${options.apiKey}` },
     body(request) {
