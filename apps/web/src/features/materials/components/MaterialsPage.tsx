@@ -165,7 +165,38 @@ export const UploadDialog = ({ onClose }: { onClose: () => void }) => {
   const [files, setFiles] = useState<File[]>([]);
   const [mode, setMode] = useState("conceptual");
   const [error, setError] = useState("");
+  const [dragging, setDragging] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const addFiles = (incoming: File[]) => {
+    if (operations.busy) return;
+    const invalid = incoming.find(
+      (file) =>
+        !/\.(pdf|txt|md)$/i.test(file.name) ||
+        !file.size ||
+        file.size > 20 * 1024 * 1024,
+    );
+    if (invalid) {
+      setError(
+        `${invalid.name}: 비어 있지 않은 PDF, TXT, Markdown 파일을 선택해 주세요. 파일당 최대 20 MiB입니다.`,
+      );
+      return;
+    }
+    setError("");
+    setFiles((previous) => {
+      const combined = [...previous];
+      for (const file of incoming)
+        if (
+          !combined.some(
+            (item) =>
+              item.name === file.name &&
+              item.size === file.size &&
+              item.lastModified === file.lastModified,
+          )
+        )
+          combined.push(file);
+      return combined;
+    });
+  };
   useEffect(() => {
     const node = dialog.current;
     node?.showModal();
@@ -174,6 +205,24 @@ export const UploadDialog = ({ onClose }: { onClose: () => void }) => {
   return (
     <dialog
       ref={dialog}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = operations.busy ? "none" : "copy";
+        if (!operations.busy) setDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (
+          !(event.relatedTarget instanceof Node) ||
+          !event.currentTarget.contains(event.relatedTarget)
+        )
+          setDragging(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        addFiles(Array.from(event.dataTransfer.files));
+      }}
       onCancel={(event) => {
         if (operations.busy) event.preventDefault();
         else {
@@ -263,16 +312,13 @@ export const UploadDialog = ({ onClose }: { onClose: () => void }) => {
               ))}
             </select>
           </label>
-          <label
-            className="drop-zone"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              setFiles(Array.from(event.dataTransfer.files));
-            }}
-          >
+          <label className={`drop-zone${dragging ? " dragging" : ""}`}>
             <span className="plus">+</span>
-            <strong>여러 파일을 놓거나 클릭하여 선택하세요</strong>
+            <strong>
+              {dragging
+                ? "여기에 파일을 놓아 추가하세요"
+                : "여러 파일을 놓거나 클릭하여 선택하세요"}
+            </strong>
             <small>
               PDF · TXT · Markdown / 여러 파일 선택 가능 · 파일당 최대 20 MiB
             </small>
@@ -280,12 +326,13 @@ export const UploadDialog = ({ onClose }: { onClose: () => void }) => {
               type="file"
               multiple
               accept=".pdf,.txt,.md"
-              onChange={(event) =>
-                setFiles(Array.from(event.target.files ?? []))
-              }
+              onChange={(event) => {
+                addFiles(Array.from(event.target.files ?? []));
+                event.target.value = "";
+              }}
             />
           </label>
-          <p id="file-name" className="muted">
+          <p id="file-name" className="muted" aria-live="polite">
             {files.length
               ? `${files.length}개 선택 · ${files.map((file) => file.name).join(", ")}`
               : ""}

@@ -1,15 +1,18 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
-test("first visit creates a subject without an implicit default", async ({
+test("first visit uploads files and opens the new learning space", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "첫 번째 학습 공간을 만들어 보세요" }),
+    page.getByRole("heading", { name: "학습 자료를 나만의 지식 지도로" }),
   ).toBeVisible();
+  await page
+    .getByLabel("학습 자료 파일 선택")
+    .setInputFiles("examples/lecture.txt");
   await page.getByRole("textbox", { name: "과목명" }).fill("첫 과목");
-  await page.getByRole("button", { name: "과목 만들기" }).click();
+  await page.getByRole("button", { name: "학습 지도 만들기" }).click();
   await expect(
     page.getByRole("heading", { name: "첫 과목 지식 그래프" }),
   ).toBeVisible();
@@ -160,6 +163,7 @@ test("create subject and upload, reanalyze, and delete material from the React U
   page,
 }) => {
   await page.goto("/");
+  await page.getByRole("link", { name: "내 학습 공간" }).click();
   await page.getByRole("button", { name: "과목 추가" }).click();
   const create = page.getByRole("dialog", { name: "새 과목 만들기" });
   await create.getByRole("textbox", { name: "과목명" }).fill("브라우저 테스트");

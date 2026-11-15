@@ -2,6 +2,20 @@
 main:focus {
   outline: none;
 }
+.drop-zone {
+  cursor: pointer;
+  transition:
+    background 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+.drop-zone.dragging {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px #3b6eea25;
+}
+#upload-controls:disabled .drop-zone {
+  cursor: not-allowed;
+}
 .analysis-materials {
   grid-column: 1 / -1;
   list-style: none;

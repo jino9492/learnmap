@@ -116,7 +116,7 @@ export const SubjectLayout = () => {
   return (
     <SubjectContext.Provider value={subject}>
       <header className="topbar">
-        <Link className="brand" to={subjectUrl(subjectId)}>
+        <Link className="brand" to="/" aria-label="LearnMap 홈">
           LearnMap
         </Link>
         <span id="subject-pill" className="pill blue">
