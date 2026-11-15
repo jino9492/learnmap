@@ -18,17 +18,14 @@
   font-size: 25px;
   font-weight: 750;
   letter-spacing: -1px;
+  line-height: 1;
 }
 .landing-brand-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  background: var(--blue);
-  color: white;
-  border-radius: 10px;
-  font-size: 27px;
-  line-height: 1;
+  display: block;
+  flex-shrink: 0;
+  width: 1.1em;
+  height: 1.1em;
+  transform: translateY(1px);
 }
 .landing-header nav {
   display: flex;

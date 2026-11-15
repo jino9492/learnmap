@@ -168,3 +168,16 @@ main:focus {
 .quiz-heading-row > a {
   flex-shrink: 0;
 }
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  line-height: 1;
+}
+.brand-mark {
+  display: block;
+  flex-shrink: 0;
+  width: 1.1em;
+  height: 1.1em;
+  transform: translateY(1px);
+}

@@ -117,6 +117,13 @@ export const SubjectLayout = () => {
     <SubjectContext.Provider value={subject}>
       <header className="topbar">
         <Link className="brand" to="/" aria-label="LearnMap 홈">
+          <img
+            className="brand-mark"
+            src="/assets/favicon.svg"
+            width="34"
+            height="34"
+            alt=""
+          />
           LearnMap
         </Link>
         <span id="subject-pill" className="pill blue">

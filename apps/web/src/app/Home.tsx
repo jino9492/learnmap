@@ -100,9 +100,13 @@ export const Home = () => {
     <div className="landing">
       <header className="landing-header">
         <Link className="landing-brand" to="/" aria-label="LearnMap 홈">
-          <span className="landing-brand-mark" aria-hidden="true">
-            ✳
-          </span>
+          <img
+            className="landing-brand-mark"
+            src="/assets/favicon.svg"
+            width="34"
+            height="34"
+            alt=""
+          />
           LearnMap
         </Link>
         <nav aria-label="소개 페이지 메뉴">
