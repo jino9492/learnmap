@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { z } from "zod";
 import { Link, useParams } from "react-router-dom";
 import {
   useOperations,
@@ -11,51 +12,39 @@ import {
   questionSetSchema,
   subjectUrl,
 } from "../../../utils/api";
-import type { Evaluation, QuestionSet } from "../../../utils/api";
 import {
   NotFound,
   SourceLinks,
   Prerequisites,
 } from "../../../components/Shared";
 
-interface QuizSession {
-  set: QuestionSet;
-  index: number;
-  answer: string;
-  evaluation: Evaluation | null;
-}
+const quizSessionSchema = z.object({
+  set: questionSetSchema,
+  index: z.number().int().nonnegative(),
+  answers: z.array(z.string()),
+  evaluations: z.array(evaluationSchema.nullable()),
+  submitted: z.boolean(),
+});
+type QuizSession = z.infer<typeof quizSessionSchema>;
 const sessionKey = (subjectId: string, conceptId: string) =>
   `learnmap.quiz:${subjectId}:${conceptId}`;
 const restore = (key: string): QuizSession | null => {
   try {
-    const raw: unknown = JSON.parse(sessionStorage.getItem(key) ?? "null");
+    const session = quizSessionSchema.parse(
+      JSON.parse(sessionStorage.getItem(key) ?? "null"),
+    );
+    const total = session.set.questions.length;
     if (
-      typeof raw !== "object" ||
-      raw === null ||
-      !("set" in raw) ||
-      !("index" in raw) ||
-      !("answer" in raw) ||
-      !("evaluation" in raw)
+      total === 0 ||
+      session.set.total !== total ||
+      session.index >= total ||
+      session.answers.length !== total ||
+      session.evaluations.length !== total ||
+      (session.submitted && session.answers.some((answer) => !answer.trim())) ||
+      (!session.submitted && session.evaluations.some(Boolean))
     )
       return null;
-    const parsed = questionSetSchema.safeParse(raw.set);
-    if (
-      !parsed.success ||
-      !Number.isInteger(raw.index) ||
-      typeof raw.index !== "number" ||
-      raw.index < 0 ||
-      raw.index >= parsed.data.questions.length ||
-      typeof raw.answer !== "string"
-    )
-      return null;
-    const evaluation =
-      raw.evaluation === null ? null : evaluationSchema.parse(raw.evaluation);
-    return {
-      set: parsed.data,
-      index: raw.index,
-      answer: raw.answer,
-      evaluation,
-    };
+    return session;
   } catch {
     return null;
   }
@@ -93,11 +82,31 @@ const QuizContent = ({ conceptId }: { conceptId: string }) => {
   const progress = subject.progress.find(
     (item) => item.conceptId === conceptId,
   );
-  const answered = session ? session.index + (session.evaluation ? 1 : 0) : 0;
+  const answered =
+    session?.answers.filter((answer) => answer.trim()).length ?? 0;
+  const complete = Boolean(session?.evaluations.every(Boolean));
+  const answer = session?.answers[session.index] ?? "";
+  const setAnswer = (answer: string) => {
+    if (!session) return;
+    const answers = [...session.answers];
+    answers[session.index] = answer;
+    update({ ...session, answers });
+  };
   return (
     <section className="page-view">
       <div className="page-heading">
-        <h1>{concept.name} · 이해도 평가</h1>
+        <div className="quiz-heading-row">
+          <h1>{concept.name} · 이해도 평가</h1>
+          <Link
+            className="secondary"
+            to={subjectUrl(
+              subject.id,
+              `graph?concept=${encodeURIComponent(conceptId)}`,
+            )}
+          >
+            지식 그래프로
+          </Link>
+        </div>
         <p>학습 자료를 바탕으로 생성된 문제를 풀고 이해도를 확인하세요.</p>
         <div className="tags">
           <span className="pill blue">AI 생성 문제</span>
@@ -125,7 +134,13 @@ const QuizContent = ({ conceptId }: { conceptId: string }) => {
                     questionSetSchema,
                     { conceptId, type, difficulty },
                   );
-                  update({ set, index: 0, answer: "", evaluation: null });
+                  update({
+                    set,
+                    index: 0,
+                    answers: set.questions.map(() => ""),
+                    evaluations: set.questions.map(() => null),
+                    submitted: false,
+                  });
                   await refresh(subject.id);
                 },
               );
@@ -168,7 +183,7 @@ const QuizContent = ({ conceptId }: { conceptId: string }) => {
                   {question.topic}
                 </span>
                 <span>
-                  {answered} / {session.set.total}문제 평가 완료
+                  {answered} / {session.set.total}문제 답안 작성
                 </span>
               </div>
               <progress
@@ -176,110 +191,133 @@ const QuizContent = ({ conceptId }: { conceptId: string }) => {
                 value={answered}
                 aria-label="문제 풀이 진행률"
               />
-              <p className="question-label">Q.</p>
-              <h2 id="question-text">{question.question.question}</h2>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!session.answer.trim() || session.evaluation) return;
-                  const submitted = session;
-                  void operations.run(
-                    "답안의 개념 이해도를 분석하고 있습니다.",
-                    async () => {
-                      const evaluation = await post(
-                        `/api/analyses/${subject.id}/evaluations`,
-                        evaluationSchema,
-                        {
-                          questionId: question.questionId,
-                          answer: submitted.answer,
+              {!complete && (
+                <>
+                  <p className="question-label">Q.</p>
+                  <h2 id="question-text">{question.question.question}</h2>
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!answer.trim() || complete) return;
+                      if (
+                        !session.submitted &&
+                        session.index + 1 < session.set.total
+                      ) {
+                        update({ ...session, index: session.index + 1 });
+                        return;
+                      }
+                      if (answered !== session.set.total) return;
+                      let submitted = { ...session, submitted: true };
+                      update(submitted);
+                      void operations.run(
+                        "전체 답안을 채점하고 피드백을 준비하고 있습니다.",
+                        async () => {
+                          for (const [
+                            index,
+                            item,
+                          ] of submitted.set.questions.entries()) {
+                            if (submitted.evaluations[index]) continue;
+                            const evaluation = await post(
+                              `/api/analyses/${subject.id}/evaluations`,
+                              evaluationSchema,
+                              {
+                                questionId: item.questionId,
+                                answer: submitted.answers[index],
+                              },
+                            );
+                            const evaluations = [...submitted.evaluations];
+                            evaluations[index] = evaluation;
+                            submitted = { ...submitted, evaluations };
+                            update(submitted);
+                          }
+                          await refresh(subject.id);
                         },
                       );
-                      update({ ...submitted, evaluation });
-                      await refresh(subject.id);
-                    },
-                  );
-                }}
-              >
-                <fieldset
-                  disabled={operations.busy || Boolean(session.evaluation)}
-                >
-                  <legend className="sr-only">답안 입력</legend>
-                  {question.question.type === "MULTIPLE_CHOICE" ? (
-                    <div className="answer-options">
-                      {question.question.options.map((option) => (
-                        <label className="choice" key={option}>
-                          <input
-                            type="radio"
-                            name="answer"
+                    }}
+                  >
+                    <fieldset disabled={operations.busy}>
+                      <legend className="sr-only">답안 입력</legend>
+                      {question.question.type === "MULTIPLE_CHOICE" ? (
+                        <div className="answer-options">
+                          {question.question.options.map((option) => (
+                            <label className="choice" key={option}>
+                              <input
+                                type="radio"
+                                name="answer"
+                                required
+                                disabled={session.submitted}
+                                value={option}
+                                checked={answer === option}
+                                onChange={() => setAnswer(option)}
+                              />
+                              <span>{option}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <label id="written-answer">
+                          <span className="sr-only">답안</span>
+                          <textarea
+                            id="answer"
+                            placeholder="개념을 이해한 내용을 자신의 말로 설명해 주세요."
+                            rows={6}
+                            maxLength={8000}
                             required
-                            value={option}
-                            checked={session.answer === option}
-                            onChange={() =>
-                              update({ ...session, answer: option })
-                            }
+                            disabled={session.submitted}
+                            value={answer}
+                            onChange={(event) => setAnswer(event.target.value)}
                           />
-                          <span>{option}</span>
                         </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <label id="written-answer">
-                      <span className="sr-only">답안</span>
-                      <textarea
-                        id="answer"
-                        placeholder="개념을 이해한 내용을 자신의 말로 설명해 주세요."
-                        rows={6}
-                        maxLength={8000}
-                        required
-                        value={session.answer}
-                        onChange={(event) =>
-                          update({ ...session, answer: event.target.value })
-                        }
-                      />
-                    </label>
-                  )}
-                  <p className="answer-note">
-                    제출 후 AI가 개념 이해도와 오개념을 분석합니다.
-                  </p>
-                  <div className="actions">
-                    <Link className="secondary" to={subjectUrl(subject.id)}>
-                      지식 그래프로
-                    </Link>
-                    <button className="primary">답안 제출</button>
-                  </div>
-                </fieldset>
-              </form>
-              {session.evaluation && (
+                      )}
+                      <p className="answer-note">
+                        모든 문제를 푼 후 전체 답안을 제출하면 채점 결과와
+                        피드백을 한꺼번에 확인할 수 있습니다.
+                      </p>
+                      <div className="actions">
+                        {session.index > 0 && !session.submitted && (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() =>
+                              update({ ...session, index: session.index - 1 })
+                            }
+                          >
+                            이전 문제
+                          </button>
+                        )}
+                        <button className="primary">
+                          {session.submitted
+                            ? "채점 다시 시도"
+                            : session.index + 1 < session.set.total
+                              ? "다음 문제"
+                              : "전체 답안 제출"}
+                        </button>
+                      </div>
+                    </fieldset>
+                  </form>
+                </>
+              )}
+              {complete && (
                 <div className="evaluation" role="status">
-                  <h3>이번 문제 평가</h3>
-                  <div className="score">
-                    {session.evaluation.evaluation.score}점
-                  </div>
-                  <p>{session.evaluation.evaluation.feedback}</p>
+                  <h2>전체 채점 결과 및 피드백</h2>
+                  <p>모든 {session.set.total}문제의 평가를 완료했습니다.</p>
                   <p>
-                    개념 이해도 {session.evaluation.progress.score}% ·{" "}
-                    {session.evaluation.progress.answered ?? answered}/
-                    {session.evaluation.progress.total ?? session.set.total}문제
-                    완료
+                    개념 이해도 {session.evaluations.at(-1)!.progress.score}%
                   </p>
-                  {session.index + 1 < session.set.total ? (
-                    <button
-                      className="primary"
-                      disabled={operations.busy}
-                      onClick={() =>
-                        update({
-                          ...session,
-                          index: session.index + 1,
-                          answer: "",
-                          evaluation: null,
-                        })
-                      }
-                    >
-                      다음 문제
-                    </button>
-                  ) : (
-                    <p>모든 범위의 평가를 완료했습니다.</p>
-                  )}
+                  {session.set.questions.map((item, index) => {
+                    const result = session.evaluations[index]!;
+                    return (
+                      <div className="detail-section" key={item.questionId}>
+                        <h3>
+                          문제 {index + 1} · {item.topic}
+                        </h3>
+                        <p>{item.question.question}</p>
+                        <p>내 답안: {session.answers[index]}</p>
+                        <div className="score">{result.evaluation.score}점</div>
+                        <p>{result.evaluation.feedback}</p>
+                      </div>
+                    );
+                  })}
                   <Link
                     className="secondary"
                     to={`/subjects/${subject.id}/learning-path?concept=${encodeURIComponent(conceptId)}`}
@@ -320,7 +358,8 @@ const QuizContent = ({ conceptId }: { conceptId: string }) => {
             <p>
               개념의 세부 내용과 분량에 맞춰 문제 수를 자동으로 정합니다. 현재
               문제 묶음의 정답률과 풀이 범위를 함께 반영해 이해도를 갱신합니다.
-              새 묶음의 첫 답안을 제출하면 이해도 평가가 새로 시작됩니다.
+              모든 문제의 답안을 제출한 뒤 채점하며, 결과와 피드백은 전체 채점이
+              끝나면 함께 표시됩니다.
             </p>
           </div>
         </aside>

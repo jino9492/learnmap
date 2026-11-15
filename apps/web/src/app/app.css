@@ -93,3 +93,17 @@ main:focus {
   stroke: #7089b4;
   color: #7089b4;
 }
+.quiz-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.quiz-heading-row h1 {
+  min-width: 0;
+}
+
+.quiz-heading-row > a {
+  flex-shrink: 0;
+}

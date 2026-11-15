@@ -83,6 +83,9 @@ test("routes preserve subject and concept across navigation, reload, quiz, and h
     page.getByRole("button", { name: "상세 설명 다시 작성", exact: true }),
   ).toBeVisible();
   await page.getByRole("link", { name: "이 개념 전체 평가하기" }).click();
+  await expect(
+    page.getByRole("link", { name: "지식 그래프로", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "문제 생성", exact: true }).click();
   await expect(
     page.getByRole("textbox", { name: "답안", exact: true }),
@@ -94,15 +97,36 @@ test("routes preserve subject and concept across navigation, reload, quiz, and h
   await expect(
     page.getByRole("textbox", { name: "답안", exact: true }),
   ).toHaveValue("요청한 페이지가 물리 메모리에 없을 때 발생합니다.");
-  await page.getByRole("button", { name: "답안 제출" }).click();
-  await expect(page.getByText("100점", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "지식 그래프로", exact: true }).click();
+  await expect(page).toHaveURL(
+    `${root}/graph?concept=${encodeURIComponent(concept.id)}`,
+  );
+  await expect(
+    page
+      .getByRole("complementary", { name: "개념 상세 정보" })
+      .getByRole("heading", { name: concept.name }),
+  ).toBeVisible();
+  await page.goBack();
+  while (
+    await page.getByRole("button", { name: "다음 문제", exact: true }).count()
+  ) {
+    await page.getByRole("button", { name: "다음 문제", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "답안", exact: true })
+      .fill("요청한 페이지가 물리 메모리에 없을 때 발생합니다.");
+  }
+  await page.getByRole("button", { name: "전체 답안 제출" }).click();
+  await expect(page.getByText("100점", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "지식 그래프로", exact: true }),
+  ).toBeVisible();
   await page.getByRole("link", { name: "학습 기록", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "나의 학습 기록" }),
   ).toBeVisible();
-  await expect(page.getByText("100점", { exact: true })).toBeVisible();
+  await expect(page.getByText("100점", { exact: true }).first()).toBeVisible();
   await page.goBack();
-  await expect(page.getByText("100점", { exact: true })).toBeVisible();
+  await expect(page.getByText("100점", { exact: true }).first()).toBeVisible();
   await page.getByRole("link", { name: "추천 학습 경로 보기" }).click();
   await page.getByRole("button", { name: "선택한 개념으로 경로 생성" }).click();
   await expect(
@@ -239,4 +263,125 @@ test("preserves the original desktop and mobile layout", async ({
     ),
   ).toBe(true);
   await expect(page.locator(".graph-card")).toHaveCSS("height", "540px");
+});
+
+test("quiz grades only after all answers and reveals feedback together, resuming failed grading", async ({
+  page,
+  request,
+}) => {
+  const subject = await (
+    await request.post("/api/subjects", { data: { name: "일괄 채점" } })
+  ).json();
+  await page.route(`**/api/subjects/${subject.id}`, (route) =>
+    route.fulfill({
+      json: {
+        id: subject.id,
+        name: "일괄 채점",
+        graph: {
+          concepts: [
+            {
+              id: "batch-concept",
+              name: "평가 개념",
+              description: "설명",
+              sourceLocation: "자료",
+              evidence: "근거",
+            },
+          ],
+          relations: [],
+        },
+        materials: [],
+        progress: [],
+        path: null,
+        history: [],
+      },
+    }),
+  );
+  await page.route(`**/api/analyses/${subject.id}/questions`, (route) =>
+    route.fulfill({
+      json: {
+        setId: "batch-set",
+        total: 3,
+        questions: [1, 2, 3].map((id) => ({
+          questionId: `q${id}`,
+          topic: `범위 ${id}`,
+          question: { type: "ESSAY", question: `질문 ${id}`, options: [] },
+        })),
+      },
+    }),
+  );
+  const submissions: { questionId: string; answer: string }[] = [];
+  let fail = true;
+  await page.route(
+    `**/api/analyses/${subject.id}/evaluations`,
+    async (route) => {
+      const input = route.request().postDataJSON();
+      submissions.push(input);
+      if (input.questionId === "q2" && fail) {
+        fail = false;
+        await route.fulfill({
+          status: 503,
+          json: { error: { message: "채점 재시도가 필요합니다." } },
+        });
+        return;
+      }
+      await route.fulfill({
+        json: {
+          evaluation: {
+            score: 80,
+            feedback: `${input.questionId} 피드백`,
+            weakPoints: [],
+          },
+          progress: {
+            conceptId: "batch-concept",
+            score: 80,
+            status: "MASTERED",
+          },
+        },
+      });
+    },
+  );
+  await page.goto(`/subjects/${subject.id}/concepts/batch-concept/quiz`);
+  await page.getByRole("button", { name: "문제 생성", exact: true }).click();
+  const answer = page.getByRole("textbox", { name: "답안", exact: true });
+  await answer.fill("첫 답안");
+  await page.getByRole("button", { name: "다음 문제", exact: true }).click();
+  await answer.fill("두 번째 답안");
+  await page.getByRole("button", { name: "이전 문제", exact: true }).click();
+  await expect(answer).toHaveValue("첫 답안");
+  await answer.fill("수정한 첫 답안");
+  await page.getByRole("button", { name: "다음 문제", exact: true }).click();
+  await expect(answer).toHaveValue("두 번째 답안");
+  await page.reload();
+  await expect(answer).toHaveValue("두 번째 답안");
+  await page.getByRole("button", { name: "다음 문제", exact: true }).click();
+  await answer.fill("세 번째 답안");
+  expect(submissions).toEqual([]);
+  await expect(page.locator(".evaluation")).toHaveCount(0);
+  await page.getByRole("button", { name: "전체 답안 제출" }).click();
+  await expect(
+    page.getByText("채점 재시도가 필요합니다.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".evaluation")).toHaveCount(0);
+  await expect(answer).toBeDisabled();
+  await page.reload();
+  await expect(answer).toHaveValue("세 번째 답안");
+  await page.getByRole("button", { name: "채점 다시 시도" }).click();
+  await expect(
+    page.getByRole("heading", { name: "전체 채점 결과 및 피드백" }),
+  ).toBeVisible();
+  for (const id of [1, 2, 3]) {
+    await expect(
+      page.getByText(`q${id} 피드백`, { exact: true }),
+    ).toBeVisible();
+  }
+  expect(submissions).toEqual([
+    { questionId: "q1", answer: "수정한 첫 답안" },
+    { questionId: "q2", answer: "두 번째 답안" },
+    { questionId: "q2", answer: "두 번째 답안" },
+    { questionId: "q3", answer: "세 번째 답안" },
+  ]);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "전체 채점 결과 및 피드백" }),
+  ).toBeVisible();
 });
