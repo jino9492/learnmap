@@ -27,10 +27,18 @@ export function createConfiguredClient(env: Record<string, string | undefined>, 
   ensure(timeoutMs === undefined || (Number.isFinite(timeoutMs) && timeoutMs > 0), "AI_TIMEOUT_MS must be a positive number.", "CONFIG");
   const transport = { ...options, timeoutMs, maxAttempts };
   switch (provider) {
-    case "openai":
-      return createOpenAiClient({ ...transport, apiKey: env.OPENAI_API_KEY?.trim() ?? "", model: env.OPENAI_MODEL?.trim() ?? "" });
-    case "gemini":
-      return createGeminiClient({ ...transport, apiKey: env.GEMINI_API_KEY?.trim() ?? "", model: env.GEMINI_MODEL?.trim() ?? "" });
+    case "openai": {
+      const shared = { ...transport, apiKey: env.OPENAI_API_KEY?.trim() ?? "" };
+      const graph = createOpenAiClient({ ...shared, model: env.OPENAI_MODEL?.trim() ?? "" });
+      const fastModel = env.OPENAI_FAST_MODEL?.trim();
+      return fastModel ? routeTaskClients(graph, createOpenAiClient({ ...shared, model: fastModel })) : graph;
+    }
+    case "gemini": {
+      const shared = { ...transport, apiKey: env.GEMINI_API_KEY?.trim() ?? "" };
+      const graph = createGeminiClient({ ...shared, model: env.GEMINI_MODEL?.trim() ?? "" });
+      const fastModel = env.GEMINI_FAST_MODEL?.trim();
+      return fastModel ? routeTaskClients(graph, createGeminiClient({ ...shared, model: fastModel })) : graph;
+    }
     case "ollama":
       return createTaskRoutedOllamaClient(env, transport);
     default:
@@ -40,6 +48,14 @@ export function createConfiguredClient(env: Record<string, string | undefined>, 
 
 const graphTasks = new Set(["concept_extraction", "concept_detail_expansion", "concept_organization", "relation_analysis"]);
 
+function routeTaskClients(graph: LlmClient, fast: LlmClient): LlmClient {
+  return {
+    generate<T>(request: GenerationRequest<T>): Promise<T> {
+      return (graphTasks.has(request.name) ? graph : fast).generate(request);
+    },
+  };
+}
+
 function createTaskRoutedOllamaClient(env: Record<string, string | undefined>, transport: TransportOptions): LlmClient {
   const shared = { ...transport, baseUrl: env.OLLAMA_BASE_URL?.trim() || undefined,
     contextLength: env.OLLAMA_CONTEXT_LENGTH?.trim() ? Number(env.OLLAMA_CONTEXT_LENGTH) : undefined };
@@ -48,9 +64,5 @@ function createTaskRoutedOllamaClient(env: Record<string, string | undefined>, t
   // Preserve existing single-model configurations when no fast model is selected.
   if (!fastModel) return graph;
   const fast = createOllamaClient({ ...shared, model: fastModel, think: false });
-  return {
-    generate<T>(request: GenerationRequest<T>): Promise<T> {
-      return (graphTasks.has(request.name) ? graph : fast).generate(request);
-    },
-  };
+  return routeTaskClients(graph, fast);
 }
