@@ -36,19 +36,66 @@ main:focus {
   gap: 8px;
   margin: 10px 0;
 }
-.graph-navigation label {
+.graph-merge-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  color: var(--muted);
   font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
   flex: 0 0 auto;
+  cursor: pointer;
+  transition:
+    background 150ms,
+    border-color 150ms,
+    color 150ms;
 }
-.graph-navigation input[type="checkbox"] {
+.graph-merge-toggle:hover {
+  border-color: #88adf3;
+}
+.graph-merge-toggle:has(input:checked) {
+  background: var(--blue-bg);
+  border-color: #88adf3;
+  color: #225ec9;
+}
+.graph-merge-toggle input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-content: center;
   width: 16px;
   min-width: 16px;
   height: 16px;
   margin: 0;
+  padding: 0;
+  border: 1px solid #b8c4d6;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+.graph-merge-toggle input:checked {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.graph-merge-toggle input::before {
+  content: "";
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+  visibility: hidden;
+}
+.graph-merge-toggle input:checked::before {
+  visibility: visible;
+}
+.graph-navigation .graph-organize {
+  margin-left: auto;
 }
 .graph-navigation button[aria-pressed="true"] {
   background: #e8f1ff;

@@ -66,7 +66,6 @@ export const GraphPage = () => {
               ? "focus"
               : "groups"
             : "all"));
-  const related = params.get("related") === "1";
   const scope = useMemo(() => {
     if (view === "groups")
       return {
@@ -113,13 +112,12 @@ export const GraphPage = () => {
         (edge) =>
           visibleIds.has(edge.source) &&
           visibleIds.has(edge.target) &&
-          (related ||
-            edge.type !== "RELATED" ||
+          (edge.type !== "RELATED" ||
             edge.source === canonicalSelected ||
             edge.target === canonicalSelected),
       ),
     };
-  }, [view, groups, activeGroup, projection, canonicalSelected, related]);
+  }, [view, groups, activeGroup, projection, canonicalSelected]);
   const displayProgress = useMemo(
     () =>
       projection.concepts.flatMap((concept) => {
@@ -331,7 +329,7 @@ export const GraphPage = () => {
           </span>
         </div>
         <div className="graph-navigation" aria-label="지도 탐색 방식">
-          <label>
+          <label className="graph-merge-toggle">
             <input
               type="checkbox"
               checked={merge}
@@ -344,8 +342,8 @@ export const GraphPage = () => {
                   return next;
                 })
               }
-            />{" "}
-            핵심·동일 개념 묶기
+            />
+            <span>핵심·동일 개념 묶기</span>
           </label>
           <button
             className="secondary"
@@ -367,29 +365,12 @@ export const GraphPage = () => {
             className="secondary"
             disabled={!selectedId}
             aria-pressed={view === "focus"}
-            onClick={() =>
-              setParams((previous) => {
-                const next = new URLSearchParams(previous);
-                next.set("view", "focus");
-                next.set("related", "1");
-                return next;
-              })
-            }
+            onClick={() => changeParam("view", "focus")}
           >
             선택 개념 주변
           </button>
-          <label>
-            <input
-              type="checkbox"
-              checked={related}
-              onChange={(event) =>
-                changeParam("related", event.target.checked ? "1" : "")
-              }
-            />{" "}
-            연관선 전체 표시
-          </label>
           <button
-            className="secondary"
+            className="secondary graph-organize"
             disabled={busy || subject.graph.concepts.length < 2}
             onClick={() =>
               void operations.run(
