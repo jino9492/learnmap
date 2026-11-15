@@ -46,7 +46,7 @@ export function createConfiguredClient(env: Record<string, string | undefined>, 
   }
 }
 
-const graphTasks = new Set(["concept_extraction", "concept_detail_expansion", "concept_organization", "relation_analysis"]);
+const graphTasks = new Set(["concept_extraction", "concept_detail_expansion", "concept_organization", "relation_analysis", "relation_review"]);
 
 function routeTaskClients(graph: LlmClient, fast: LlmClient): LlmClient {
   return {

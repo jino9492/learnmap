@@ -12,6 +12,11 @@ let calls = 0;
 const client = { async generate(request) {
   calls++;
   await delay(30);
+  if (request.name === "relation_review") return { decisions: request.data.candidates.map((candidate) => ({
+    candidateId: candidate.id, verdict: "SUPPORTED", reason: "원문에 근거한 관계입니다.",
+    prerequisiteConceptId: candidate.conceptIds[0], dependentConceptId: candidate.conceptIds[1],
+    evidenceIds: request.data.concepts.find((concept) => concept.id === candidate.conceptIds[0]).evidenceIds,
+  })) };
   if (request.name === "concept_extraction") {
     const source = request.data.sources[0];
     return { concepts: [1, 2, 3].map((id) => ({ id: `c${id}`, name: `개념 ${id}`, description: "출처를 바탕으로 한 설명입니다.", sourceLocation: source.location, evidence: source.excerpts[0].id })) };

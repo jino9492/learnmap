@@ -8,6 +8,8 @@ import { AiError } from "../core/errors.ts";
 import { mapBatches } from "../core/batches.ts";
 import type { BatchOptions } from "../core/batches.ts";
 import { canSplitFailure, requestCharacters, REQUEST_CHARACTERS } from "../core/partition.ts";
+import { reviewRelations } from "./review.ts";
+import { relationEvidence } from "./evidence.ts";
 
 interface RelationOptions extends BatchOptions {
   crossMaterial?: boolean;
@@ -19,7 +21,9 @@ export async function analyzeRelations(client: LlmClient, input: unknown, concep
   conceptCollectionSchema.parse({ concepts });
   validateGraph({ concepts, relations: [] });
   for (const concept of concepts) conceptCitations(concept, material);
-  const windows = (options.crossMaterial ? crossMaterialWindows : conceptWindows)(concepts.map(conceptSummary));
+  const windows = (options.crossMaterial ? crossMaterialWindows : conceptWindows)(concepts.map((concept) => ({
+    ...conceptSummary(concept), citations: relationEvidence(concept, material),
+  })));
   validateGraph({ concepts, relations: options.existingRelations ?? [] });
   const relations = new Map<string, Relation>((options.existingRelations ?? []).map((relation) => [relationKey(relation), relation]));
   onProgress?.({ stage: "relations", completed: 0, total: windows.length });
@@ -53,23 +57,39 @@ export async function analyzeRelations(client: LlmClient, input: unknown, concep
     onProgress?.({ stage: "relations", completed: ++completed, total: windows.length });
     return result;
   });
+  const proposed = new Map<string, Relation>();
+  const rejected: string[] = [];
   // Merge in input order so request latency cannot change which conflicting edge survives.
   for (const result of candidates) {
-    const rejected: string[] = [];
     for (const relation of result.relations) {
       const key = relationKey(relation);
-      if (relations.has(key)) continue;
+      if (relations.has(key) || proposed.has(key)) continue;
       try {
-        validateGraph({ concepts, relations: [...relations.values(), relation] });
-        relations.set(key, relation);
+        // Review opposing claims before choosing one; a bad first edge must not suppress a correct later edge.
+        validateGraph({ concepts, relations: [relation] });
+        proposed.set(key, relation);
       } catch (error) {
         if (!(error instanceof AiError) || error.code !== "SEMANTIC") throw error;
         rejected.push(`${relation.source} -> ${relation.target}: ${error.message}`);
       }
     }
-    if (rejected.length) onProgress?.({ stage: "relations", completed, total: windows.length,
-      detail: `Rejected ${rejected.length} invalid relation candidate(s): ${rejected.join("; ")}` });
   }
+  if ([...proposed.values()].some((relation) => relation.type !== "RELATED")) {
+    onProgress?.({ stage: "relations", completed, total: windows.length, detail: "방향이 있는 관계의 유형과 방향을 원문 근거로 검증합니다." });
+  }
+  for (const relation of await reviewRelations(client, material, concepts, [...proposed.values()], (event) => onProgress?.({ ...event, completed, total: windows.length }))) {
+    const key = relationKey(relation);
+    if (relations.has(key)) continue;
+    try {
+      validateGraph({ concepts, relations: [...relations.values(), relation] });
+      relations.set(key, relation);
+    } catch (error) {
+      if (!(error instanceof AiError) || error.code !== "SEMANTIC") throw error;
+      rejected.push(`${relation.source} -> ${relation.target}: ${error.message}`);
+    }
+  }
+  if (rejected.length) onProgress?.({ stage: "relations", completed, total: windows.length,
+      detail: `Rejected ${rejected.length} invalid relation candidate(s): ${rejected.join("; ")}` });
   const result = [...relations.values()];
   validateGraph({ concepts, relations: result });
   return result;

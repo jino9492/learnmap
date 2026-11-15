@@ -10,6 +10,7 @@ import { createAnalysisCache, analysisCacheScope } from "./features/material-ana
 import { measureAnalysisStage } from "./features/material-analysis/timing.mjs";
 import { validateGraph } from "./features/knowledge-graph/index.ts";
 import { expandConceptDetails } from "./ai/concept-extraction/details.ts";
+import { validateDetailedExplanations } from "./ai/concept-extraction/quality.ts";
 import { webAsset } from './web-assets.mjs';
 import { mapBatches } from "./ai/core/batches.ts";
 import { questionTargets, validateQuestion } from "./ai/question-generation/index.ts";
@@ -130,6 +131,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         conceptCollectionSchema.parse({ concepts: value.graph.concepts });
         relationCollectionSchema.parse({ relations: value.graph.relations });
         validateGraph(value.graph);
+        validateDetailedExplanations(value.graph.concepts);
         if (value.detailedConcepts) conceptCollectionSchema.parse({ concepts: value.detailedConcepts });
       } }), report);
       job.concepts = localized.result.graph.concepts;
@@ -362,6 +364,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
             const { result: localized, report: localization } = await localizeResult(job.client, expanded, {
               validate: (value) => {
                 conceptCollectionSchema.parse({ concepts: [value] });
+                validateDetailedExplanations([value]);
               },
             });
             if (subject) {

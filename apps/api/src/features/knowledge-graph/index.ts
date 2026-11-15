@@ -6,6 +6,7 @@ export function validateGraph(graph: Graph): void {
   ensure(ids.size === graph.concepts.length && ids.size > 0, "Concept IDs must be unique and nonempty.");
   const keys = new Set<string>();
   const outgoing = new Map<string, string[]>();
+  const hierarchy = new Map<string, string[]>();
   for (const relation of graph.relations) {
     ensure(ids.has(relation.source) && ids.has(relation.target), "Relation references an unknown concept.");
     ensure(relation.source !== relation.target, "Self-relations are not allowed.");
@@ -16,18 +17,26 @@ export function validateGraph(graph: Graph): void {
     if (relation.type === "PREREQUISITE") {
       outgoing.set(relation.source, [...(outgoing.get(relation.source) ?? []), relation.target]);
     }
+    if (relation.type === "PARENT_CHILD") {
+      hierarchy.set(relation.source, [...(hierarchy.get(relation.source) ?? []), relation.target]);
+    }
   }
+  assertAcyclic(outgoing, "Prerequisite cycle detected.");
+  assertAcyclic(hierarchy, "Parent-child cycle detected.");
+}
+
+function assertAcyclic(outgoing: Map<string, string[]>, message: string): void {
   const visiting = new Set<string>();
   const visited = new Set<string>();
   function visit(id: string): void {
-    ensure(!visiting.has(id), "Prerequisite cycle detected.");
+    ensure(!visiting.has(id), message);
     if (visited.has(id)) return;
     visiting.add(id);
     for (const next of outgoing.get(id) ?? []) visit(next);
     visiting.delete(id);
     visited.add(id);
   }
-  for (const id of ids) visit(id);
+  for (const id of outgoing.keys()) visit(id);
 }
 
 export function prerequisiteContext(graph: Graph, targetId: string): Graph {

@@ -1,4 +1,5 @@
 import { expandConceptDetails } from "./ai/concept-extraction/details.ts";
+import { validateDetailedExplanations } from "./ai/concept-extraction/quality.ts";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
@@ -72,6 +73,7 @@ async function main() {
     relationCollectionSchema.parse({ relations: value.relations });
     if (value.detailedConcepts) conceptCollectionSchema.parse({ concepts: value.detailedConcepts });
     validateGraph(value);
+    validateDetailedExplanations(value.concepts);
   } }), reportTiming);
   const { concepts, relations } = localized.result;
   reportTiming({ kind: "timing", stage: "analysis", outcome: "completed", elapsedMs: Math.round((performance.now() - analysisStartedAt) * 100) / 100 });

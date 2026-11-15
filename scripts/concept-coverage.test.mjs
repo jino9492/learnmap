@@ -81,7 +81,7 @@ test('question sets grade cumulatively, survive restart, reject duplicate and su
   let failExpansion = false;
   let expectedPathScore = 100;
   const clientFactory = () => ({ async generate(request) {
-    if (request.name === 'concept_detail_expansion') return { description: failExpansion ? '짧은 요약' : lesson };
+    if (request.name === 'concept_detail_expansion') return { description: failExpansion ? '이 단원에서는 개념을 살펴보겠습니다.' : lesson };
     if (request.name === 'question_generation') {
       if (failGeneration) throw new Error('provider unavailable');
       return { type: request.data.type, question: `${request.data.concept.name}의 내용을 설명하세요.`, options: [], referenceAnswer: '핵심 설명입니다.', evaluationCriteria: ['핵심 내용을 설명합니다.'] };
@@ -152,12 +152,11 @@ test('question sets grade cumulatively, survive restart, reject duplicate and su
     base = subjectBase;
     await post('details', { conceptId });
     failExpansion = true;
-    const compact = await post('details', { conceptId });
-    assert.ok(compact.concept.details.every((detail) => detail.description === '짧은 요약'));
+    await post('details', { conceptId }, 502);
     failExpansion = false;
     await stop(); await start();
     const savedSubject = await (await fetch(base.replace(id, subjectId))).json();
-    assert.ok(savedSubject.graph.concepts[0].details.every((detail) => detail.description === '짧은 요약'));
+    assert.ok(savedSubject.graph.concepts[0].details.every((detail) => detail.description === lesson));
     const stored = JSON.parse(await readFile(storagePath, 'utf8'));
     assert.ok(stored.subjects[0].detailOverrides[conceptId].signature);
 
@@ -174,7 +173,7 @@ test('explanation depth is prompt-guided and compact answers preserve sources wi
   const original = structuredClone(concept);
   const expanded = await expandConceptDetails({ async generate(request) {
     calls.push(request);
-    return { description: '개념의 의미를 간결하게 설명합니다.' };
+    return { description: '페이지 테이블은 가상 페이지를 물리 프레임에 대응시키는 자료 구조입니다.' };
   } }, [concept], material, undefined, { concurrency: 1 });
   assert.equal(calls.length, details.length);
   assert.ok(calls.every((call) => !call.data.correction));
@@ -183,20 +182,20 @@ test('explanation depth is prompt-guided and compact answers preserve sources wi
   assert.equal(calls[0].schema.json.properties.description.minLength, 1);
   assert.equal(expanded[0].description, concept.description);
   assert.deepEqual(expanded[0].details.map((detail) => detail.evidence), details.map((detail) => detail.evidence));
-  assert.ok(expanded[0].details.every((detail) => detail.description === '개념의 의미를 간결하게 설명합니다.'));
+  assert.ok(expanded[0].details.every((detail) => detail.description === '페이지 테이블은 가상 페이지를 물리 프레임에 대응시키는 자료 구조입니다.'));
   assert.deepEqual(concept, original);
 });
 
 test('explanations regenerate without using length to classify existing or legacy descriptions', async () => {
   const rich = { ...concept, details: [{ ...details[0], description: lesson }] };
   let calls = 0;
-  const client = { async generate() { calls++; return { description: '새로운 설명입니다.' }; } };
+  const client = { async generate() { calls++; return { description: '페이징은 가상 주소 공간을 고정된 크기의 페이지로 나누는 방식입니다.' }; } };
   const [regenerated] = await expandConceptDetails(client, [rich], material);
   assert.equal(calls, 1);
-  assert.equal(regenerated.details[0].description, '새로운 설명입니다.');
+  assert.equal(regenerated.details[0].description, '페이징은 가상 주소 공간을 고정된 크기의 페이지로 나누는 방식입니다.');
   const { details: omitted, ...legacy } = concept;
   const [expanded] = await expandConceptDetails(client, [legacy], material);
-  assert.equal(expanded.details[0].description, '새로운 설명입니다.');
+  assert.equal(expanded.details[0].description, '페이징은 가상 주소 공간을 고정된 크기의 페이지로 나누는 방식입니다.');
   assert.notEqual(expanded.details[0].description, legacy.description);
 });
 
@@ -204,11 +203,11 @@ test('unreadable detail responses retain the existing explanation and continue r
   const events = []; let attempts = 0;
   const [expanded] = await expandConceptDetails({ async generate(request) {
     attempts++;
-    return request.data.topic === details[0].name ? { description: '' } : { description: '생성된 설명' };
+    return request.data.topic === details[0].name ? { description: '' } : { description: '페이지 폴트는 요청한 페이지가 물리 메모리에 없을 때 발생합니다.' };
   } }, [concept], material, (event) => events.push(event), { concurrency: 1 });
   assert.equal(attempts, 5);
   assert.equal(expanded.details[0].description, details[0].description);
-  assert.ok(expanded.details.slice(1).every((detail) => detail.description === '생성된 설명'));
+  assert.ok(expanded.details.slice(1).every((detail) => detail.description === '페이지 폴트는 요청한 페이지가 물리 메모리에 없을 때 발생합니다.'));
   assert.ok(events.some((event) => event.warning));
   assert.equal(events.at(-1).completed, details.length);
   assert.deepEqual(expanded.details.map((detail) => detail.evidence), details.map((detail) => detail.evidence));

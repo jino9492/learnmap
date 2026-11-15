@@ -72,14 +72,14 @@ export function combineSubject(subject, analyses) {
       const source = ids.get(relation.source);
       const target = ids.get(relation.target);
       if (source === target || relations.some((item) => item.type === relation.type && ((item.source === source && item.target === target) || (relation.type === "RELATED" && item.source === target && item.target === source)))) continue;
-      if (relation.type === "PREREQUISITE") {
+      if (relation.type === "PREREQUISITE" || relation.type === "PARENT_CHILD") {
         const pending = [target];
         const visited = new Set();
         while (pending.length) {
           const id = pending.pop();
           if (visited.has(id)) continue;
           visited.add(id);
-          for (const link of relations) if (link.type === "PREREQUISITE" && link.source === id) pending.push(link.target);
+          for (const link of relations) if (link.type === relation.type && link.source === id) pending.push(link.target);
         }
         if (visited.has(source)) continue;
       }

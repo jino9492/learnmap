@@ -12,6 +12,12 @@
       { "source": "c2", "target": "c3", "type": "PREREQUISITE", "reason": "페이지 테이블의 존재 비트는 페이지가 물리 메모리에 있는지 판단하는 데 사용됩니다." }
     ]
   },
+  "relation_review": {
+    "decisions": [
+      { "candidateId": "r1", "verdict": "SUPPORTED", "prerequisiteConceptId": "c1", "dependentConceptId": "c2", "evidenceIds": ["e1"], "reason": "페이지 테이블의 대응 관계를 이해하려면 페이지의 의미를 먼저 알아야 합니다." },
+      { "candidateId": "r2", "verdict": "SUPPORTED", "prerequisiteConceptId": "c2", "dependentConceptId": "c3", "evidenceIds": ["e1"], "reason": "페이지의 메모리 존재 여부를 판단하는 구조를 이해한 뒤 페이지 폴트를 학습합니다." }
+    ]
+  },
   "question_generation": {
     "type": "SHORT_ANSWER",
     "question": "페이지 폴트는 언제 발생하나요?",

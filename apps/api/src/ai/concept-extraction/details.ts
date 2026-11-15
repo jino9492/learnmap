@@ -6,9 +6,10 @@ import { object, text } from "../core/schema.ts";
 import { prompts } from "../core/prompts.ts";
 import { partitionRequests, runPartition } from "../core/partition.ts";
 import { conceptCitations } from "../../features/material-analysis/index.ts";
+import { validateConceptExplanation } from "./quality.ts";
 
-// Depth is guided by the prompt. Validate only the shared response structure.
-const explanationSchema = object({ description: text });
+// Keep compact factual explanations valid, but reject non-teaching prose.
+const explanationSchema = object({ description: { ...text, parse: validateConceptExplanation } });
 
 // Extraction identifies learning objectives. Writing a lesson is a separate,
 // focused request so many concepts cannot compete for the same output budget.
@@ -49,7 +50,7 @@ export async function expandConceptDetails(client: LlmClient, concepts: Concept[
         for (let attempt = 0; attempt < 3; attempt++) {
           try { return explanationSchema.parse(await client.generate(build(sources, failure))); }
           catch (error) {
-            if (!(error instanceof AiError) || error.code !== "FORMAT" || attempt === 2) throw error;
+            if (!(error instanceof AiError) || !["FORMAT", "SEMANTIC"].includes(error.code) || attempt === 2) throw error;
             failure = error.message;
           }
         }
@@ -58,7 +59,7 @@ export async function expandConceptDetails(client: LlmClient, concepts: Concept[
         if (!(error instanceof AiError) || error.code !== "FORMAT") throw error;
         onProgress?.({ stage: "concepts", completed, total: tasks.length, warning: true,
           detail: "일부 상세 설명의 응답 형식을 읽지 못해 기존 개념 설명을 유지했습니다. 분석은 계속 진행합니다." });
-        return { description: details[0].description };
+        return { description: validateConceptExplanation(details[0].description) };
       }));
     }
     // Each partition remains a separate lesson section to avoid truncating or
