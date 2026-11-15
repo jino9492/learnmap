@@ -2,6 +2,10 @@ import { Link } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { useSubject, useOperations } from "../hooks/useWorkspace";
 import type { Citation, Status } from "../utils/api";
+import {
+  conceptProjection,
+  prerequisiteConcepts,
+} from "../features/knowledge-graph/graph-view";
 
 interface ModalProps {
   titleId: string;
@@ -119,16 +123,16 @@ export const SourceLinks = ({
 };
 export const Prerequisites = ({ conceptId }: { conceptId: string }) => {
   const subject = useSubject();
-  const ids = new Set(
-    subject.graph.relations
-      .filter(
-        (relation) =>
-          relation.type === "PREREQUISITE" && relation.target === conceptId,
-      )
-      .map((relation) => relation.source),
+  const projection = conceptProjection(
+    subject.graph.concepts,
+    subject.graph.relations,
+    subject.graph.equivalences,
+    subject.graph.coreGroups,
   );
-  const concepts = subject.graph.concepts.filter((concept) =>
-    ids.has(concept.id),
+  const concepts = prerequisiteConcepts(
+    projection,
+    subject.graph.relations,
+    conceptId,
   );
   return concepts.length ? (
     <div className="tags">

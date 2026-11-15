@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { createWorkspace, combineSubject, learningProgress, conceptContentKey } from "./features/workspace/index.mjs";
 import { conceptCitations } from "./features/material-analysis/index.ts";
+import { inferEquivalentGroups, equivalenceSignature } from "./ai/concept-organization/equivalence.ts";
 import { createConfiguredClient, analysisOptionsFromEnv, extractConcepts, organizeConcepts, analyzeRelations, generateQuestion, publicQuestion, evaluateAnswer, recommendPath, localizeResult, AiError } from "./ai/index.ts";
 import { loadMaterialBytes } from "./features/materials/index.mjs";
 import { createAnalysisCache, analysisCacheScope } from "./features/material-analysis/cache.mjs";
@@ -215,6 +216,17 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
               const target = combined.concepts.find((concept) => concept.id === relation.target);
               return source.sourceLocation.split('/')[0] !== target.sourceLocation.split('/')[0];
             });
+            combined.relations = relations;
+          }
+          if (job.mode === 'conceptual') {
+            try {
+              const groups = await measureAnalysisStage('canonicalization', () => inferEquivalentGroups(job.client, combined.concepts, combined.relations, options, progress), report);
+              subject.conceptEquivalences = { signature: equivalenceSignature(combined.concepts, combined.relations), groups };
+            } catch (error) {
+              progress({ stage: 'organization', completed: 0, total: 1, warning: true,
+                detail: '동일 개념 추가 검토를 완료하지 못했습니다. 원본 개념과 분석 결과를 보존했습니다.' });
+              logAiEvent({ kind: 'canonicalization', outcome: 'failed', analysisId: job.id, ...errorInfo(error) });
+            }
           }
           job.status = 'saving';
         });
@@ -283,12 +295,30 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         send(response, 201, { id: subject.id, name });
         return;
       }
+      const organizeMatch = /^\/api\/subjects\/([a-f0-9-]+)\/organize$/.exec(url.pathname);
+      if (organizeMatch && request.method === 'POST') {
+        const subject = subjects.get(organizeMatch[1]);
+        if (!subject) throw new HttpError(404, '과목을 찾을 수 없습니다.');
+        if (subject.busy || [...analyses.values()].some((job) => job.subjectId === subject.id && !['ready', 'failed'].includes(job.status))) throw new HttpError(409, '현재 분석이 끝난 뒤 개념을 정리해 주세요.');
+        subject.busy = true;
+        try {
+          const combined = combineSubject(subject, analyses);
+          const options = analysisOptionsFromEnv(env);
+          if (options.cacheEnabled) options.checkpoints = createCheckpoints({ directory: storagePath ? `${storagePath}.checkpoints` : undefined, scope: analysisCacheScope(env, {}) });
+          const client = clientFactory((event) => logAiEvent({ kind: 'canonicalization', ...event }));
+          const groups = await inferEquivalentGroups(client, combined.concepts, combined.relations, options);
+          subject.conceptEquivalences = { signature: equivalenceSignature(combined.concepts, combined.relations), groups };
+          await workspace.save();
+          send(response, 200, { groups: groups.length });
+        } finally { subject.busy = false; }
+        return;
+      }
       const subjectMatch = /^\/api\/subjects\/([a-f0-9-]+)$/.exec(url.pathname);
       if (subjectMatch && request.method === "GET") {
         const subject = subjects.get(subjectMatch[1]);
         if (!subject) throw new HttpError(404, "과목을 찾을 수 없습니다.");
         const combined = combineSubject(subject, analyses);
-        send(response, 200, { id: subject.id, name: subject.name, graph: { concepts: combined.concepts, relations: combined.relations }, materials: combined.materials, progress: [...subject.progress.values()].map(learningProgress), history: subject.history, path: subject.path });
+        send(response, 200, { id: subject.id, name: subject.name, graph: { concepts: combined.concepts, relations: combined.relations, equivalences: combined.equivalences, coreGroups: combined.coreGroups }, materials: combined.materials, progress: [...subject.progress.values()].map(learningProgress), history: subject.history, path: subject.path });
         return;
       }
       const materialMatch = /^\/api\/materials\/([a-f0-9-]+)(?:\/(file|analyze))?$/.exec(url.pathname);

@@ -76,6 +76,23 @@ test('reversed hierarchy is corrected by grounded review and unsupported prerequ
   assert.ok(events.some((event) => event.detail?.includes('관계 검증에서 제외')));
 });
 
+test('a grounded learning foundation can survive analysis and review without an explicit must-learn statement', async () => {
+  const excerpt = '변화율은 입력 변화에 따른 출력 변화의 비율이다. 기울기 기반 갱신은 목적 함수의 변화율을 이용해 매개변수를 조정한다.';
+  const lesson = { id: 'foundations', title: '학습 기반', sources: [{ location: 'page:1', text: excerpt }] };
+  const nodes = [{ id: 'rate', name: '변화율' }, { id: 'update', name: '기울기 기반 갱신' }].map((node) => ({ ...node, description: node.name, evidence: excerpt, sourceLocation: 'page:1' }));
+  const calls = [];
+  const result = await analyzeRelations({ async generate(request) {
+    calls.push(request.name);
+    assert.match(request.instructions, /not only knowledge that is logically indispensable/);
+    if (request.name === 'relation_analysis') return { relations: [{ source: 'rate', target: 'update', type: 'PREREQUISITE', reason: '변화율을 알면 갱신 방향을 해석하는 데 도움이 된다.' }] };
+    return { decisions: request.data.candidates.map((candidate) => ({ candidateId: candidate.id, verdict: 'SUPPORTED', prerequisiteConceptId: 'rate', dependentConceptId: 'update', evidenceIds: [request.data.evidence[0].id], reason: '변화율의 의미가 갱신 방향과 크기를 이해하는 직접적인 학습 기반이다.' })) };
+  } }, lesson, nodes);
+  assert.deepEqual(calls, ['relation_analysis', 'relation_review']);
+  assert.equal(result[0].type, 'PREREQUISITE');
+  assert.equal(result[0].source, 'rate');
+  assert.equal(result[0].target, 'update');
+});
+
 test('semantic review fails closed on missing decisions, foreign IDs and invented evidence', async () => {
   for (const change of [
     (response) => ({ decisions: [] }),

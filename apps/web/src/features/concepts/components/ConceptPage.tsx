@@ -13,6 +13,7 @@ import {
 import type { Concept } from "../../../utils/api";
 import { NotFound, SourceLink, SourceLinks } from "../../../components/Shared";
 import { explanationBlocks } from "../../../../explanation.ts";
+import { conceptProjection } from "../../knowledge-graph/graph-view";
 
 export const ConceptPage = () => {
   const subject = useSubject();
@@ -21,31 +22,46 @@ export const ConceptPage = () => {
   const refresh = useRefreshSubject();
   const concept = subject.graph.concepts.find((item) => item.id === conceptId);
   if (!concept) return <NotFound />;
+  const projection = conceptProjection(
+    subject.graph.concepts,
+    subject.graph.relations,
+    subject.graph.equivalences,
+    subject.graph.coreGroups,
+  );
+  const displayed = projection.concepts.find(
+    (item) => item.id === projection.canonicalIds.get(concept.id),
+  );
+  const representative = displayed?.representative ? displayed : null;
+  const members = displayed?.members ?? [concept];
   const groups = new Map<
     string,
     {
       name: string;
       description: string;
       sources: Pick<Concept, "sourceLocation" | "evidence">[];
+      ready: boolean;
     }
   >();
-  for (const detail of concept.details ?? [concept]) {
-    const key = JSON.stringify([detail.name, detail.description]);
-    const group = groups.get(key) ?? {
-      name: detail.name,
-      description: detail.description,
-      sources: [],
-    };
-    if (
-      !group.sources.some(
-        (source) =>
-          source.sourceLocation === detail.sourceLocation &&
-          source.evidence === detail.evidence,
+  for (const member of members)
+    for (const detail of member.details ?? [member]) {
+      const key = JSON.stringify([detail.name, detail.description]);
+      const group = groups.get(key) ?? {
+        name: detail.name,
+        description: detail.description,
+        sources: [],
+        ready: false,
+      };
+      group.ready ||= member.detailsState !== "pending";
+      if (
+        !group.sources.some(
+          (source) =>
+            source.sourceLocation === detail.sourceLocation &&
+            source.evidence === detail.evidence,
+        )
       )
-    )
-      group.sources.push(detail);
-    groups.set(key, group);
-  }
+        group.sources.push(detail);
+      groups.set(key, group);
+    }
   return (
     <section className="page-view">
       <div className="page-heading">
@@ -59,14 +75,40 @@ export const ConceptPage = () => {
         </Link>
       </div>
       <div id="concept-content" className="concept-content">
-        <h1>{concept.name}</h1>
-        <p className="concept-summary">{concept.description}</p>
+        <h1>{representative?.name ?? concept.name}</h1>
+        <p className="concept-summary">
+          {representative?.description ?? concept.description}
+        </p>
+        {members.length > 1 && (
+          <section aria-label="대표 개념의 세부 학습 항목">
+            <h2>세부 학습 항목</h2>
+            <p>
+              모든 항목의 설명과 근거를 아래에 모았습니다. 현재 선택:{" "}
+              {concept.name}. 문제·이해도·설명 작성은 선택한 원본 항목별로
+              유지됩니다.
+            </p>
+            <div className="actions">
+              {members.map((member) => (
+                <Link
+                  className="secondary"
+                  key={member.id}
+                  to={conceptUrl(subject.id, member.id)}
+                  aria-current={member.id === concept.id ? "page" : undefined}
+                >
+                  {member.name}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
         <div className="actions">
           <Link
             className="primary"
             to={conceptUrl(subject.id, concept.id, true)}
           >
-            이 개념 전체 평가하기
+            {members.length > 1
+              ? "선택 항목 평가하기"
+              : "이 개념 전체 평가하기"}
           </Link>
           <button
             className="secondary"
@@ -103,7 +145,7 @@ export const ConceptPage = () => {
             <h2>
               {index + 1}. {detail.name}
             </h2>
-            {concept.detailsState !== "pending" && (
+            {detail.ready && (
               <div className="lesson-body">
                 {explanationBlocks(detail.description).map((block, index) =>
                   block.type === "code" ? (
@@ -137,7 +179,7 @@ export const ConceptPage = () => {
         ))}
         <div className="detail-section">
           <h3>전체 참고 자료</h3>
-          <SourceLinks source={concept} />
+          <SourceLinks source={representative ?? concept} />
         </div>
       </div>
     </section>

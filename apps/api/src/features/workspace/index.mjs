@@ -3,6 +3,8 @@ import { dirname } from "node:path";
 import { validateGraph } from '../knowledge-graph/index.ts';
 import { relationKey } from '../material-analysis/index.ts';
 import { analysisProgress } from '../material-analysis/progress.mjs';
+import { equivalentGroups, equivalenceSignature } from '../../ai/concept-organization/equivalence.ts';
+import { representativeConceptGroups } from '../knowledge-graph/core-groups.ts';
 
 export function createWorkspace(storagePath) {
   const analyses = new Map();
@@ -109,6 +111,8 @@ export function combineSubject(subject, analyses) {
   }
   return {
     ...subject, status: concepts.length ? "ready" : "empty", concepts, relations,
+    equivalences: equivalentGroups(concepts, relations, subject.conceptEquivalences?.signature === equivalenceSignature(concepts, relations) ? subject.conceptEquivalences.groups : []),
+    coreGroups: representativeConceptGroups(concepts.filter((concept) => jobs.some((job) => job.mode === 'conceptual' && concept.id.startsWith(`${job.id}:`))), relations),
     material: { id: subject.id, title: subject.name, sources },
     materials: jobs.map((job) => ({ id: job.id, title: job.filename, status: job.status, mode: job.mode, error: job.error,
       warnings: (job.events ?? []).filter((event) => event.kind === 'progress' && event.warning).map((event) => event.detail),

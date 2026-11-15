@@ -14,6 +14,17 @@ sourceSummaries, when supplied, are generated condensations of additional eviden
 When evidence is insufficient, return empty lists where allowed.
 Do not claim that possible learning difficulties are confirmed diagnoses.`;
 
+export const prerequisitePolicy = `PREREQUISITE is a useful direct learning foundation from source to target,
+not only knowledge that is logically indispensable. Accept source when understanding its terminology,
+representation, mechanism or principle substantially helps explain how or why target works.
+Infer this pedagogical dependency from the supplied source facts even when the material never explicitly says
+"learn source first". Explain the specific knowledge source provides and how target builds on it.
+Prefer a small number of direct, meaningful foundations; do not add distant transitive ancestors redundantly.
+Same chapter, chronology, broad domain, subtype membership or generic usefulness ALONE is insufficient.
+An application or subtype may have a foundation link when its mechanism actually builds on source knowledge;
+explain that learning bridge rather than treating classification itself as proof.
+Do not invent facts or endpoints, reverse the learning direction, or introduce prerequisite cycles.`;
+
 export const prompts = {
   conceptDetails: `${safety}
 Task: Write a complete, readable Korean lesson about ONE supplied topic. This is the main learning text,
@@ -105,13 +116,18 @@ Use Korean names consistently, even when the document or the examples above are 
 Explain the underlying idea, its purpose and the relationship between grouped details in 1-3 short sentences.
 For each group select memberIds exactly from the supplied IDs. These IDs establish provenance; never invent members.
 Do not combine unrelated concepts merely to reduce the count. One-off examples need not be separate core concepts.
-Choose granularity by independent learning objectives, never a target group count. Singleton groups are allowed.
-Merge only equivalent ideas or details that explain the SAME mechanism. Relatedness, a shared chapter, a chronology,
-or a shared technology domain alone is not a reason to merge. Preserve distinctions that could be assessed separately.
+Choose representative concepts, never a target group count. Definitions, components, operation, applications,
+strengths and limitations of ONE named system or method belong to that representative concept as detailed learning items.
+Being separately assessable is NOT sufficient to make a facet a separate core node. For example, a system's knowledge
+base, inference engine, applications, rule maintenance and knowledge acquisition limitations can share its system name.
+Keep genuinely distinct methods, subtypes, prerequisites, historical events and paradigm transitions separate.
+Relatedness, a shared chapter, chronology or a shared technology domain alone is not a reason to merge.
 Do not replace distinct ideas with umbrella labels such as "AI history and technology", "AI functions and applications"
 or "AI future and ethics". Use relations to connect such ideas instead. Do not create an umbrella plus duplicate children.
 Assign every supplied member ID to exactly one group. Do not drop items or reuse a member in multiple groups.
-When the input already contains independently assessable concepts, retain them as singleton groups unless equivalent.
+Use the concise supported subject name for a representative, rather than an enumeration of its facets.
+If a facet must remain alone because other facets are absent from this batch, preserve its explicit subject in the name
+(e.g. "전문가 시스템의 지식 획득 병목") so the same subject can be reconciled across batches later.
 When descriptions show the same meaning under translated names (e.g. template rendering and its translated label),
 organize them together rather than keeping duplicate concepts solely because their labels differ.
 Return an empty list only when no grounded conceptual grouping is possible.`,
@@ -120,12 +136,13 @@ Task: Propose supported semantic relations between the supplied concept IDs.
 Use the IDs exactly as supplied, including any batch prefix. Never use concept names as IDs.
 Each concept.evidence and citations contain exact source excerpts. Use them as grounding; descriptions are generated
 orientation and may be wrong. Prefer the source when it contradicts a description. Do not invent context.
-PARENT_CHILD points from broader to narrower; PREREQUISITE points from required knowledge to dependent knowledge.
+PARENT_CHILD points from broader to narrower; PREREQUISITE points from learning foundation to dependent knowledge.
 For PARENT_CHILD, target must be a KIND OF source, not merely a part, use, example, historical successor or related topic.
 For example, when the evidence says deep learning is a kind of machine learning, source is machine learning and target
 is deep learning. Do not reverse the edge to follow the sentence's subject. Never infer this fact from the example alone.
-For PREREQUISITE, explain which specific knowledge of source is needed to understand target. Membership, application,
-chronology and co-occurrence do not establish a learning prerequisite. Prefer no edge over a speculative directed edge.
+${prerequisitePolicy}
+Actively look for foundational learning links as well as taxonomy and associations. Do not downgrade a justified
+learning foundation to RELATED merely because it is helpful rather than absolutely required.
 RELATED is symmetric. Include a reason; do not infer a relation from co-occurrence alone.
 Return only strong, supported candidates, at most 30 relations. An empty list is valid when no relation is supported.
 Never create self-links, duplicate relations or prerequisite cycles.`,
@@ -139,8 +156,9 @@ prerequisiteConceptId and dependentConceptId. These IDs define the direction, no
 PARENT_CHILD means target is a KIND OF source. Check the substitution "target is a kind of source" explicitly.
 If the source says "A is a kind of B", broaderConceptId is B and narrowerConceptId is A.
 Being a component, application, example, historical successor or shared subject is not a taxonomic relationship.
-PREREQUISITE means specific knowledge of source is required to understand target. Say what knowledge is required
-and why target depends on it. Being part of AI, appearing earlier, or being useful together is not enough.
+${prerequisitePolicy}
+For prerequisite review, a grounded pedagogical inference is sufficient. Do not require explicit prerequisite wording
+in the quotation or proof that target is impossible to understand without source.
 Reject wrong relation types, contradictions, ambiguous concepts and unsupported claims. Do not repair these by guessing.
 SUPPORTED requires supporting evidenceIds from that candidate's allowedEvidenceIds, belonging to its two endpoints.
 Never borrow another candidate's evidence, even if it appears in the shared catalog. Mere mention of both names is insufficient.
@@ -187,7 +205,7 @@ The question has passed a separate single-answer review. Explain the actual fals
 chosen option, not missing details a learner could not add to a fixed option. Never invent required participants,
 dates or other criteria to rationalize an answer key. Selecting an option is not submitting an incomplete essay.
 Use connectedConcepts (with their sources) and relations to explain relevant gaps. PARENT_CHILD is broader to narrower;
-PREREQUISITE is required knowledge to dependent knowledge; RELATED is symmetric. Inspect both incoming and outgoing
+PREREQUISITE is a useful direct learning foundation to dependent knowledge; RELATED is symmetric. Inspect both incoming and outgoing
 relations, but mention only those that help explain this answer; a connected node alone is not evidence of a weakness.
 weakPoints must be an array of unique concept ID strings selected ONLY from candidateConceptIds, never prose,
 concept names, objects or invented IDs. Select the tested concept and/or connected concepts whose misunderstanding

@@ -29,3 +29,67 @@ main:focus {
   align-self: center;
   margin: 0;
 }
+.graph-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+.graph-navigation label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.graph-navigation input[type="checkbox"] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.graph-navigation button[aria-pressed="true"] {
+  background: #e8f1ff;
+  color: #225ec9;
+  border-color: #88adf3;
+}
+.graph-group-list {
+  display: none;
+}
+@media (max-width: 700px) {
+  .graph-group-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 180px;
+    overflow: auto;
+    margin-bottom: 12px;
+  }
+  .graph-group-list button {
+    max-width: 100%;
+    font-size: 12px;
+  }
+}
+.concept-detail select {
+  width: 100%;
+  max-width: 100%;
+  margin: 8px 0;
+}
+.graph-edge.SUBJECT_LINK {
+  --edge-color: #7089b4;
+  stroke: #a8b8d2;
+  stroke-width: 1.6;
+  stroke-dasharray: none;
+}
+
+.graph-edge.SUBJECT_LINK[data-focus="muted"] {
+  opacity: 0.5;
+}
+
+.graph-edge.SUBJECT_LINK[data-focus="topic"],
+.edge-key.topic {
+  stroke: #7089b4;
+  color: #7089b4;
+}

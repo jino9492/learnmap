@@ -62,7 +62,22 @@ export const workspaceSchema = z.object({
 export const subjectSchema = z.object({
   id: z.string(),
   name: z.string(),
-  graph: z.object({ concepts: z.array(concept), relations: z.array(relation) }),
+  graph: z.object({
+    concepts: z.array(concept),
+    relations: z.array(relation),
+    coreGroups: z
+      .array(
+        z.object({
+          name: z.string(),
+          description: z.string(),
+          memberIds: z.array(z.string()),
+        }),
+      )
+      .optional(),
+    equivalences: z
+      .array(z.object({ memberIds: z.array(z.string()), reason: z.string() }))
+      .optional(),
+  }),
   materials: z.array(materialSchema),
   progress: z.array(progress),
   path: recommendation.nullable(),

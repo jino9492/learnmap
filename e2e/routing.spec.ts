@@ -69,11 +69,19 @@ test("routes preserve subject and concept across navigation, reload, quiz, and h
   await expect(
     page.getByRole("heading", { name: concept.name, exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("상세 설명은 필요할 때 작성합니다");
-  await page.getByRole("button", { name: "상세 설명 작성", exact: true }).click();
-  await expect(page.getByRole("button", { name: "상세 설명 다시 작성", exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(
+    "상세 설명은 필요할 때 작성합니다",
+  );
+  await page
+    .getByRole("button", { name: "상세 설명 작성", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "상세 설명 다시 작성", exact: true }),
+  ).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("button", { name: "상세 설명 다시 작성", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "상세 설명 다시 작성", exact: true }),
+  ).toBeVisible();
   await page.getByRole("link", { name: "이 개념 전체 평가하기" }).click();
   await page.getByRole("button", { name: "문제 생성", exact: true }).click();
   await expect(
@@ -217,7 +225,8 @@ test("preserves the original desktop and mobile layout", async ({
     };
   });
   expect(desktop.header).toEqual({ x: 0, y: 0, width: 1440, height: 72 });
-  expect(desktop.graph).toEqual({ x: 270, y: 184, width: 846, height: 746 });
+  expect(desktop.graph).toMatchObject({ x: 270, width: 846, height: 746 });
+  expect(desktop.graph.y).toBeGreaterThanOrEqual(184);
   expect(desktop.detail).toEqual({ x: 1128, y: 96, width: 288, height: 884 });
   await page.setViewportSize({ width: 390, height: 1000 });
   await expect(page.locator(".mobile-materials")).toBeVisible();

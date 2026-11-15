@@ -1,3 +1,4 @@
+import { radialGraphLayout } from "./src/features/knowledge-graph/graph-view.ts";
 import type { Concept, Relation } from "../api/src/ai/core/contracts.ts";
 import type { Status } from "./src/utils/api.ts";
 
@@ -14,8 +15,12 @@ export type GraphArrangements = Map<string, Map<string, GraphPosition>>;
 interface GraphRenderInput {
   name: string;
   graphId?: string;
-  concepts: Pick<Concept, "id" | "name" | "description">[];
+  concepts: (Pick<Concept, "id" | "name" | "description"> & {
+    groupSize?: number;
+    searchText?: string;
+  })[];
   relations: Pick<Relation, "source" | "target" | "type">[];
+  layoutRelations?: Pick<Relation, "source" | "target" | "type">[];
   progress: { conceptId: string; status: Status }[];
   selectedId: string | null;
   path?: { steps: { conceptId: string }[] } | null;
@@ -32,7 +37,7 @@ interface GraphEdge {
   element: SVGPathElement;
   source: string;
   target: string;
-  type: Relation["type"];
+  type: Relation["type"] | "SUBJECT_LINK";
   recommended: boolean;
 }
 interface DragState {
@@ -45,12 +50,6 @@ interface DragState {
   viewport: Viewport;
   moved: boolean;
 }
-interface Sector {
-  start: number;
-  span: number;
-  angle: number;
-}
-
 // Layout traversal creates these entries before reading them. Fail explicitly if that invariant breaks.
 const mapValue = <K, V>(map: Map<K, V>, key: K): V => {
   const value = map.get(key);
@@ -80,122 +79,7 @@ export function layoutGraph(
   concepts: Pick<Concept, "id">[],
   relations: Pick<Relation, "source" | "target" | "type">[],
 ) {
-  const ids = new Set(concepts.map((concept) => concept.id));
-  const links = relations.filter(
-    (relation) =>
-      relation.type !== "RELATED" &&
-      ids.has(relation.source) &&
-      ids.has(relation.target),
-  );
-  const incoming = new Map(concepts.map((concept) => [concept.id, 0]));
-  const children = new Map<string, string[]>(
-    concepts.map((concept) => [concept.id, []]),
-  );
-  for (const link of links) {
-    incoming.set(link.target, mapValue(incoming, link.target) + 1);
-    mapValue(children, link.source).push(link.target);
-  }
-  const roots = concepts.filter((concept) => incoming.get(concept.id) === 0);
-  const queue = roots.map((concept) => concept.id);
-  const levels = new Map(queue.map((id) => [id, 1]));
-  const branches = new Map<string, string[]>(
-    concepts.map((concept) => [concept.id, []]),
-  );
-  let cursor = 0;
-  // A spanning forest gives shared descendants one position and handles cycles safely.
-  for (const concept of [...roots, ...concepts]) {
-    if (cursor === queue.length && !levels.has(concept.id)) {
-      roots.push(concept);
-      queue.push(concept.id);
-      levels.set(concept.id, 1);
-    }
-    while (cursor < queue.length) {
-      const id = queue[cursor++];
-      for (const child of mapValue(children, id)) {
-        if (levels.has(child)) continue;
-        levels.set(child, mapValue(levels, id) + 1);
-        mapValue(branches, id).push(child);
-        queue.push(child);
-      }
-    }
-  }
-  const weights = new Map<string, number>();
-  for (const id of [...queue].reverse())
-    weights.set(
-      id,
-      Math.max(
-        1,
-        mapValue(branches, id).reduce(
-          (sum, child) => sum + mapValue(weights, child),
-          0,
-        ),
-      ),
-    );
-  const sectors = new Map<string, Sector>();
-  function divideSector(ids: string[], start: number, span: number) {
-    const total = ids.reduce((sum, id) => sum + mapValue(weights, id), 0);
-    for (const id of ids) {
-      const portion = (span * mapValue(weights, id)) / total;
-      sectors.set(id, { start, span: portion, angle: start + portion / 2 });
-      start += portion;
-    }
-  }
-  divideSector(
-    roots.map((concept) => concept.id),
-    -Math.PI,
-    2 * Math.PI,
-  );
-  const layers = new Map<number, string[]>();
-  for (const id of queue) {
-    const sector = mapValue(sectors, id);
-    divideSector(mapValue(branches, id), sector.start, sector.span);
-    const level = mapValue(levels, id);
-    if (!layers.has(level)) layers.set(level, []);
-    mapValue(layers, level).push(id);
-  }
-  const positions = new Map<string, Point>();
-  const nodeSpacing = 210;
-  const ringSpacing = 240;
-  let radius = 0;
-  for (const layer of layers.values()) {
-    radius += ringSpacing;
-    const angles = layer
-      .map((id) => mapValue(sectors, id).angle)
-      .sort((a, b) => a - b);
-    // Keep rectangular cards apart even in crowded or unevenly sized branches.
-    if (angles.length > 1) {
-      const gaps = angles.map((angle, index) =>
-        index
-          ? angle - angles[index - 1]
-          : angle + 2 * Math.PI - (angles.at(-1) ?? angle),
-      );
-      radius = Math.max(
-        radius,
-        nodeSpacing / (2 * Math.sin(Math.min(...gaps) / 2)),
-      );
-    }
-    for (const id of layer) {
-      const angle = mapValue(sectors, id).angle;
-      positions.set(id, {
-        x: radius * Math.cos(angle),
-        y: radius * Math.sin(angle),
-      });
-    }
-  }
-  const width = Math.max(
-    846,
-    ...[...positions.values()].map(({ x }) => 2 * (Math.abs(x) + 150)),
-  );
-  const height = Math.max(
-    646,
-    ...[...positions.values()].map(({ y }) => 2 * (Math.abs(y) + 100)),
-  );
-  const center = { x: width / 2, y: height / 2 };
-  for (const position of positions.values()) {
-    position.x += center.x;
-    position.y += center.y;
-  }
-  return { positions, roots, width, height, center };
+  return radialGraphLayout(concepts, relations);
 }
 
 function svgElement<K extends keyof SVGElementTagNameMap>(
@@ -268,7 +152,7 @@ export function createGraph(
   const connectedEdges = new Map<string, Set<GraphEdge>>();
   const edges: GraphEdge[] = [];
   let edgeLayer: SVGGElement | undefined;
-  let layoutSize = { width: 846, height: 646 };
+  let selectedForFit: string | null = null;
   const rootId = "__subject__";
   let drag: DragState | undefined;
   function graphPoint(event: PointerEvent) {
@@ -283,20 +167,20 @@ export function createGraph(
     const visible = [...nodeElements.keys()].map((id) =>
       mapValue(positions, id),
     );
+    if (!visible.length) {
+      full = { x: 0, y: 0, width: 846, height: 646 };
+      return;
+    }
     const left = Math.min(
-      0,
       ...visible.map((item) => item.x - item.width / 2 - 60),
     );
     const top = Math.min(
-      20,
       ...visible.map((item) => item.y - item.height / 2 - 60),
     );
     const right = Math.max(
-      layoutSize.width,
       ...visible.map((item) => item.x + item.width / 2 + 60),
     );
     const bottom = Math.max(
-      layoutSize.height,
       ...visible.map((item) => item.y + item.height / 2 + 60),
     );
     full = { x: left, y: top, width: right - left, height: bottom - top };
@@ -322,17 +206,34 @@ export function createGraph(
       `${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`,
     );
   }
-  function fit() {
+  function fit(readable = false) {
     if (drag) return;
     updateBounds();
-    viewport = { ...full };
+    const bounds = svg.getBoundingClientRect();
+    const width = bounds.width || 846;
+    const height = bounds.height || 646;
+    const aspect = width / height;
+    const fittedWidth = Math.max(full.width, full.height * aspect);
+    const nextWidth = readable
+      ? Math.min(fittedWidth, Math.max(420, width / 0.8))
+      : fittedWidth;
+    const focus =
+      readable && selectedForFit ? positions.get(selectedForFit) : undefined;
+    const centerX = focus?.x ?? full.x + full.width / 2;
+    const centerY = focus?.y ?? full.y + full.height / 2;
+    viewport = {
+      x: centerX - nextWidth / 2,
+      y: centerY - nextWidth / aspect / 2,
+      width: nextWidth,
+      height: nextWidth / aspect,
+    };
     applyViewport();
   }
   function zoom(factor: number) {
     if (drag) return;
     const nextWidth = Math.max(
-      full.width * 0.2,
-      Math.min(full.width * 3, viewport.width * factor),
+      Math.max(180, (svg.getBoundingClientRect().width || 846) * 0.25),
+      Math.min(Math.max(full.width * 3, 2500), viewport.width * factor),
     );
     const scale = nextWidth / viewport.width;
     viewport = {
@@ -458,7 +359,9 @@ export function createGraph(
       const outgoing = edge.source === selectedId;
       let focus = "";
       if (hasSelection && (incoming || outgoing)) {
-        if (edge.type === "PARENT_CHILD") focus = incoming ? "parent" : "child";
+        if (edge.type === "SUBJECT_LINK") focus = "topic";
+        else if (edge.type === "PARENT_CHILD")
+          focus = incoming ? "parent" : "child";
         else if (edge.type === "PREREQUISITE")
           focus = incoming ? "prerequisite" : "dependent";
         else focus = "related";
@@ -468,7 +371,7 @@ export function createGraph(
         "data-focus",
         focus || (hasSelection ? "muted" : ""),
       );
-      if (edge.type !== "RELATED")
+      if (edge.type !== "RELATED" && edge.type !== "SUBJECT_LINK")
         edge.element.setAttribute(
           "marker-end",
           `url(#arrow-${focus || (edge.recommended ? "recommended" : "default")})`,
@@ -482,6 +385,7 @@ export function createGraph(
     graphId = name,
     concepts,
     relations,
+    layoutRelations = relations,
     progress,
     selectedId,
     path,
@@ -494,15 +398,15 @@ export function createGraph(
     const visible = concepts.filter(
       (concept) =>
         (!query ||
-          `${concept.name} ${concept.description}`
+          `${concept.name} ${concept.description} ${concept.searchText ?? ""}`
             .toLowerCase()
             .includes(query.toLowerCase())) &&
         (filter === "ALL" ||
           (progressById.get(concept.id)?.status ?? "NOT_STARTED") === filter),
     );
     const visibleIds = new Set(visible.map((concept) => concept.id));
-    const layout = layoutGraph(concepts, relations);
-    layoutSize = layout;
+    const layout = layoutGraph(visible, layoutRelations);
+    selectedForFit = selectedId;
     if (!arrangements.has(graphId)) arrangements.set(graphId, new Map());
     positions = mapValue(arrangements, graphId);
     const validIds = new Set([
@@ -567,7 +471,7 @@ export function createGraph(
     function edge(
       source: string,
       target: string,
-      type: Relation["type"],
+      type: GraphEdge["type"],
       recommended = false,
     ) {
       const line = svgElement("path", {
@@ -580,6 +484,8 @@ export function createGraph(
         "data-target": target,
       });
       const connection = { element: line, source, target, type, recommended };
+      if (type === "SUBJECT_LINK")
+        line.append(svgElement("title", {}, `${name}의 탐색 가지 연결`));
       edges.push(connection);
       for (const id of [source, target]) {
         if (!connectedEdges.has(id)) connectedEdges.set(id, new Set());
@@ -587,8 +493,8 @@ export function createGraph(
       }
       layer.append(line);
     }
-    for (const root of layout.roots)
-      if (visibleIds.has(root.id)) edge(rootId, root.id, "PARENT_CHILD");
+    // The layout's first-level branches connect to the topic without asserting a semantic hierarchy.
+    for (const branch of layout.roots) edge(rootId, branch.id, "SUBJECT_LINK");
     for (const relation of relations)
       if (visibleIds.has(relation.source) && visibleIds.has(relation.target)) {
         const index = pathIds.indexOf(relation.source);
@@ -628,7 +534,9 @@ export function createGraph(
         "data-concept": concept.id,
         role: "button",
         tabindex: 0,
-        "aria-label": `${concept.name}, ${statusLabels[status]}`,
+        "aria-label": concept.groupSize
+          ? `${concept.name}, 개념 ${concept.groupSize}개`
+          : `${concept.name}, ${statusLabels[status]}`,
         "aria-pressed": selectedId === concept.id,
       });
       group.dataset.nodeKey = concept.id;
@@ -641,12 +549,23 @@ export function createGraph(
         svgElement("title", {}, concept.name),
         svgElement("rect", { x: -83, y: -38, width: 166, height: 76, rx: 14 }),
       );
-      const title =
-        concept.name.length > 11
-          ? `${concept.name.slice(0, 10)}…`
-          : concept.name;
+      const label = svgElement("text", {
+        y: concept.name.length > 11 ? -17 : -7,
+      });
+      if (concept.name.length > 11) {
+        label.append(
+          svgElement("tspan", { x: 0, dy: 0 }, concept.name.slice(0, 11)),
+          svgElement(
+            "tspan",
+            { x: 0, dy: 15 },
+            concept.name.length > 22
+              ? `${concept.name.slice(11, 21)}…`
+              : concept.name.slice(11),
+          ),
+        );
+      } else label.textContent = concept.name;
       group.append(
-        svgElement("text", { y: -7 }, title),
+        label,
         svgElement("rect", {
           x: -38,
           y: 6,
@@ -658,7 +577,9 @@ export function createGraph(
         svgElement(
           "text",
           { y: 22, class: "node-status" },
-          statusLabels[status],
+          concept.groupSize
+            ? `개념 ${concept.groupSize}개`
+            : statusLabels[status],
         ),
       );
       world.append(group);
@@ -671,7 +592,7 @@ export function createGraph(
     updateBounds();
     if (signature !== nextSignature) {
       signature = nextSignature;
-      fit();
+      fit(visible.length > 18);
     }
     return visible.length;
   }

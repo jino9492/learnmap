@@ -16,7 +16,7 @@ import {
   REQUEST_CHARACTERS,
   runPartition,
 } from "../core/partition.ts";
-import { safety } from "../core/prompts.ts";
+import { safety, prerequisitePolicy } from "../core/prompts.ts";
 import {
   conceptCitations,
   relationKey,
@@ -47,7 +47,9 @@ Descriptions are generated hints, not facts. Include plausible taxonomy, prerequ
 specific meaningful associations, even with different wording. Shared domain alone is insufficient. Do not invent pairs.
 Return selected: [{left, right, score}], scoring relevance from 0 to 100. left must be a query ID and right one of
 that query's allowedTargets. Search the entire target catalog, including differently worded terminology and implied
-prerequisites. Choose up to 4 useful targets per query. Omit clearly unrelated targets. Never assert direction.
+prerequisites. Include direct learning foundations even without shared wording or an explicit "required" statement.
+Within the existing limit, prioritize explaining how a source principle supports the target's mechanism over generic associations.
+Choose up to 4 useful targets per query. Omit clearly unrelated targets. Never assert direction.
 Do not enumerate every combination. Keep distinct mechanisms distinct. Return no more than 16 candidates per batch.`;
 
 const judgmentInstructions = `${safety}
@@ -57,8 +59,9 @@ evidenceIds and a short reason. The supplied pair is UNORDERED: choose direction
 Source and target must be the pair's two distinct endpoint IDs. NONE still copies those two IDs and uses evidenceIds: [].
 PARENT_CHILD: source is broader; target is a KIND OF source. A component, application, example, historical successor
 or shared topic is not a subtype. If A is a kind of B, source is B and target is A.
-PREREQUISITE: source is specifically required knowledge to understand target. State what knowledge is required.
-Membership, chronology, co-occurrence and usefulness alone are not prerequisites. RELATED needs a specific supported
+${prerequisitePolicy}
+Do not downgrade a grounded direct foundation to RELATED merely because it is not strictly indispensable.
+RELATED needs a specific supported
 association; a shared broad field is insufficient. Prefer NONE to guessing. Missing context cannot establish a relation.
 Every accepted decision requires evidenceIds belonging to its endpoints. Never borrow other pairs' evidence.
 Inspect supplied contrasts and exceptions. Descriptions and model-generated lessons are not source facts.

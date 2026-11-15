@@ -7,6 +7,7 @@ import { validateGraph } from "../../features/knowledge-graph/index.ts";
 import { conceptCitations, organizationBatches, organizationSummary } from "../../features/material-analysis/index.ts";
 import { mapBatches, validateConcurrency } from "../core/batches.ts";
 import type { BatchOptions } from "../core/batches.ts";
+import { collapseConceptFacets } from "../../features/knowledge-graph/core-groups.ts";
 
 function mergeExactConcepts(concepts: Concept[]): Concept[] {
   const merged = new Map<string, Concept>();
@@ -59,7 +60,7 @@ export async function organizeConcepts(client: LlmClient, input: unknown, detail
         onProgress?.({ stage: 'organization', completed, total: batches.length,
           detail: `개념 정리 배치 ${index + 1}: 중복 배정된 ${duplicates.length}개 항목을 발견해 한 번 교정합니다.` });
         result = schema.parse(await client.generate({ name: 'concept_organization',
-          instructions: `${prompts.organization}\nCorrection: Your previous grouping reused member IDs. Regenerate the complete grouping. Each member ID must occur exactly once across all groups and within each group. Keep distinct learning objectives separate. Use singleton groups when uncertain. The correction.duplicateMemberIds field identifies the repeated IDs.`,
+          instructions: `${prompts.organization}\nCorrection: Your previous grouping reused member IDs. Regenerate the complete grouping. Each member ID must occur exactly once across all groups and within each group. Keep distinct methods and subtypes separate, but retain facets of one named subject in its representative group. Use singleton groups when uncertain. The correction.duplicateMemberIds field identifies the repeated IDs.`,
           data: { ...data, correction: { duplicateMemberIds: duplicates } }, schema }));
         if (overlappingIds().length) {
           onProgress?.({ stage: 'organization', completed: ++completed, total: batches.length, warning: true,
@@ -100,5 +101,5 @@ export async function organizeConcepts(client: LlmClient, input: unknown, detail
     });
     pool = mergeExactConcepts(results.flat());
   }
-  return pool.map((concept, index) => ({ ...concept, id: `k${index + 1}` }));
+  return collapseConceptFacets(pool).map((concept, index) => ({ ...concept, id: `k${index + 1}` }));
 }

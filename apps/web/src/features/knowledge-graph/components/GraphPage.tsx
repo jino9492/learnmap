@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
+import { conceptProjection, explorationGroups } from "../graph-view";
+import type { DisplayConcept } from "../graph-view";
+import { z } from "zod";
 import { createGraph } from "../../../../graph.ts";
 import { UploadDialog } from "../../materials/components/MaterialsPage";
 import type { GraphController, GraphArrangements } from "../../../../graph.ts";
@@ -26,16 +29,132 @@ export const GraphPage = () => {
   const refresh = useRefreshSubject();
   const [upload, setUpload] = useState(false);
   const [params, setParams] = useSearchParams();
+  const merge = params.get("merge") !== "0";
+  const projection = useMemo(
+    () =>
+      conceptProjection(
+        subject.graph.concepts,
+        subject.graph.relations,
+        merge ? subject.graph.equivalences : [],
+        merge ? subject.graph.coreGroups : [],
+      ),
+    [subject.graph, merge],
+  );
+  const groups = useMemo(
+    () => explorationGroups(projection.concepts, projection.relations),
+    [projection],
+  );
+  const large = projection.concepts.length > 24;
   const selectedId =
-    params.get("concept") ?? subject.graph.concepts[0]?.id ?? null;
+    params.get("concept") ??
+    (large ? null : (subject.graph.concepts[0]?.id ?? null));
+  const canonicalSelected = selectedId
+    ? (projection.canonicalIds.get(selectedId) ?? selectedId)
+    : null;
   const query = params.get("q") ?? "";
   const filter = params.get("filter") ?? "ALL";
+  const groupId = params.get("group");
+  const activeGroup = groups.find((group) => group.id === groupId);
+  const view =
+    query || filter !== "ALL"
+      ? "all"
+      : (params.get("view") ??
+        (activeGroup
+          ? "group"
+          : large
+            ? params.has("concept")
+              ? "focus"
+              : "groups"
+            : "all"));
+  const related = params.get("related") === "1";
+  const scope = useMemo(() => {
+    if (view === "groups")
+      return {
+        concepts: groups.map((group): DisplayConcept => ({
+          id: group.id,
+          name: group.name,
+          description: `${group.memberIds.length}개 개념의 탐색 그룹`,
+          evidence: "",
+          sourceLocation: "",
+          groupSize: group.memberIds.length,
+        })),
+        relations: [],
+        layoutRelations: [],
+      };
+    let ids: Set<string> | undefined;
+    if (view === "group" && activeGroup) ids = new Set(activeGroup.memberIds);
+    if (view === "focus" && canonicalSelected) {
+      const connected = projection.relations
+        .filter(
+          (edge) =>
+            edge.source === canonicalSelected ||
+            edge.target === canonicalSelected,
+        )
+        .sort(
+          (a, b) => Number(a.type === "RELATED") - Number(b.type === "RELATED"),
+        );
+      ids = new Set(
+        [
+          canonicalSelected,
+          ...connected.flatMap((edge) => [edge.source, edge.target]),
+        ].slice(0, 36),
+      );
+    }
+    const concepts = ids
+      ? projection.concepts.filter((concept) => ids.has(concept.id))
+      : projection.concepts;
+    const visibleIds = new Set(concepts.map((concept) => concept.id));
+    return {
+      concepts,
+      layoutRelations: projection.relations.filter(
+        (edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target),
+      ),
+      relations: projection.relations.filter(
+        (edge) =>
+          visibleIds.has(edge.source) &&
+          visibleIds.has(edge.target) &&
+          (related ||
+            edge.type !== "RELATED" ||
+            edge.source === canonicalSelected ||
+            edge.target === canonicalSelected),
+      ),
+    };
+  }, [view, groups, activeGroup, projection, canonicalSelected, related]);
+  const displayProgress = useMemo(
+    () =>
+      projection.concepts.flatMap((concept) => {
+        const records = (concept.members ?? [concept]).flatMap((member) =>
+          subject.progress.filter((entry) => entry.conceptId === member.id),
+        );
+        if (!records.length) return [];
+        const score = Math.min(...records.map((entry) => entry.score));
+        return [
+          {
+            conceptId: concept.id,
+            score,
+            status:
+              records.length < (concept.members?.length ?? 1)
+                ? ("NOT_STARTED" as const)
+                : score >= 80
+                  ? ("MASTERED" as const)
+                  : score >= 50
+                    ? ("REVIEW_REQUIRED" as const)
+                    : ("WEAK" as const),
+          },
+        ];
+      }),
+    [projection, subject.progress],
+  );
   const svg = useRef<SVGSVGElement>(null);
   const controller = useRef<GraphController | null>(null);
   const selection = useRef((id: string) => {
     setParams((previous) => {
       const next = new URLSearchParams(previous);
-      next.set("concept", id);
+      if (id.startsWith("group:")) {
+        next.set("group", id);
+        next.set("view", "group");
+        next.delete("concept");
+      } else next.set("concept", id);
       return next;
     });
   });
@@ -44,7 +163,11 @@ export const GraphPage = () => {
     selection.current = (id: string) => {
       setParams((previous) => {
         const next = new URLSearchParams(previous);
-        next.set("concept", id);
+        if (id.startsWith("group:")) {
+          next.set("group", id);
+          next.set("view", "group");
+          next.delete("concept");
+        } else next.set("concept", id);
         return next;
       });
     };
@@ -67,18 +190,31 @@ export const GraphPage = () => {
     if (graph)
       setCount(
         graph.render({
-          graphId: subject.id,
-          name: subject.name,
-          ...subject.graph,
-          progress: subject.progress,
+          graphId: `${subject.id}:radial-branches-v3:${view}:${activeGroup?.id ?? ""}:${view === "focus" ? canonicalSelected : ""}:${query}:${filter}`,
+          name:
+            activeGroup && view === "group" ? activeGroup.name : subject.name,
+          ...scope,
+          progress: displayProgress,
           path: subject.path,
-          selectedId,
+          selectedId: canonicalSelected,
           query,
           filter,
         }),
       );
-  }, [subject, selectedId, query, filter]);
+  }, [
+    subject,
+    scope,
+    displayProgress,
+    canonicalSelected,
+    query,
+    filter,
+    view,
+    activeGroup,
+  ]);
   const concept = subject.graph.concepts.find((item) => item.id === selectedId);
+  const selectedDisplay = projection.concepts.find(
+    (item) => item.id === canonicalSelected,
+  );
   const progress = subject.progress.find(
     (item) => item.conceptId === selectedId,
   );
@@ -88,6 +224,10 @@ export const GraphPage = () => {
         const next = new URLSearchParams(previous);
         if (value) next.set(key, value);
         else next.delete(key);
+        if (key === "view") {
+          next.delete("q");
+          next.delete("filter");
+        }
         return next;
       },
       { replace: true },
@@ -98,7 +238,7 @@ export const GraphPage = () => {
         <div className="map-heading">
           <div>
             <h1>{subject.name} 지식 그래프</h1>
-            <p>{`자료 ${subject.materials.length}개 · 개념 ${subject.graph.concepts.length}개 · 연결 ${subject.graph.relations.length}개`}</p>
+            <p>{`자료 ${subject.materials.length}개 · 지도 개념 ${projection.concepts.length}개 · 원본 항목 ${subject.graph.concepts.length}개 · 연결 ${projection.relations.length}개`}</p>
           </div>
           <div id="filters" className="filters" aria-label="이해도 필터">
             {[
@@ -119,6 +259,19 @@ export const GraphPage = () => {
             ))}
           </div>
         </div>
+        {view === "groups" && (
+          <nav className="graph-group-list" aria-label="탐색 그룹 목록">
+            {groups.map((group) => (
+              <button
+                key={group.id}
+                className="secondary"
+                onClick={() => selection.current(group.id)}
+              >
+                {group.name} · {group.memberIds.length}개
+              </button>
+            ))}
+          </nav>
+        )}
         <div className="graph-card">
           <div className="graph-toolbar">
             <button
@@ -173,7 +326,87 @@ export const GraphPage = () => {
               −
             </button>
           </div>
-          <span className="graph-count">{count}개 개념 표시</span>
+          <span className="graph-count">
+            {count}개 {view === "groups" ? "탐색 그룹" : "개념"} 표시
+          </span>
+        </div>
+        <div className="graph-navigation" aria-label="지도 탐색 방식">
+          <label>
+            <input
+              type="checkbox"
+              checked={merge}
+              onChange={(event) =>
+                setParams((previous) => {
+                  const next = new URLSearchParams(previous);
+                  next.set("merge", event.target.checked ? "1" : "0");
+                  next.delete("group");
+                  next.set("view", "groups");
+                  return next;
+                })
+              }
+            />{" "}
+            핵심·동일 개념 묶기
+          </label>
+          <button
+            className="secondary"
+            aria-pressed={view === "groups"}
+            onClick={() => {
+              changeParam("view", "groups");
+            }}
+          >
+            그룹 개요
+          </button>
+          <button
+            className="secondary"
+            aria-pressed={view === "all"}
+            onClick={() => changeParam("view", "all")}
+          >
+            전체 개념
+          </button>
+          <button
+            className="secondary"
+            disabled={!selectedId}
+            aria-pressed={view === "focus"}
+            onClick={() =>
+              setParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.set("view", "focus");
+                next.set("related", "1");
+                return next;
+              })
+            }
+          >
+            선택 개념 주변
+          </button>
+          <label>
+            <input
+              type="checkbox"
+              checked={related}
+              onChange={(event) =>
+                changeParam("related", event.target.checked ? "1" : "")
+              }
+            />{" "}
+            연관선 전체 표시
+          </label>
+          <button
+            className="secondary"
+            disabled={busy || subject.graph.concepts.length < 2}
+            onClick={() =>
+              void operations.run(
+                "동일 개념을 원문 근거로 확인하고 있습니다.",
+                async () => {
+                  await post(
+                    `/api/subjects/${subject.id}/organize`,
+                    z.object({ groups: z.number() }),
+                    {},
+                  );
+                  await refresh(subject.id);
+                },
+              )
+            }
+          >
+            동일 개념 정리
+          </button>
         </div>
         <div id="stats" className="stats">
           {[
@@ -195,6 +428,7 @@ export const GraphPage = () => {
           ))}
         </div>
         <div className="graph-legend">
+          <span className="edge-key topic">주제 연결 (탐색용)</span>
           <span className="edge-key parent">부모 → 선택 노드</span>
           <span className="edge-key child">선택 노드 → 자식</span>
           <span className="edge-key prerequisite">선수 → 선택 노드</span>
@@ -205,8 +439,45 @@ export const GraphPage = () => {
       <aside className="panel concept-detail" aria-label="개념 상세 정보">
         {concept ? (
           <>
-            <h2>{concept.name}</h2>
+            <h2>
+              {selectedDisplay?.representative
+                ? selectedDisplay.name
+                : concept.name}
+            </h2>
+            {selectedDisplay && (selectedDisplay.members?.length ?? 0) > 1 && (
+              <div className="detail-section">
+                <label htmlFor="original-concept">
+                  {selectedDisplay.representative
+                    ? "세부 학습 항목 · 원본"
+                    : "같은 개념의 원본 항목"}
+                </label>
+                <select
+                  id="original-concept"
+                  value={concept.id}
+                  onChange={(event) =>
+                    changeParam("concept", event.target.value)
+                  }
+                >
+                  {selectedDisplay.members?.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name} ·{" "}
+                      {subject.materials.find(
+                        (material) =>
+                          material.id === member.sourceLocation.split("/")[0],
+                      )?.title ?? member.sourceLocation}
+                    </option>
+                  ))}
+                </select>
+                <p>원본별 설명·문제·학습 기록은 그대로 보존됩니다.</p>
+              </div>
+            )}
             <StatusBadge status={progress?.status ?? "NOT_STARTED"} />
+            {selectedDisplay?.representative && (
+              <p className="helper">
+                현재 선택 항목: {concept.name}. 아래 이해도·설명·문제는 이 원본
+                항목에 해당합니다.
+              </p>
+            )}
             <div className="detail-section">
               <h3>현재 이해도</h3>
               <div className="score">
