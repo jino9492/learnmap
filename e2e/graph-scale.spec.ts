@@ -233,6 +233,62 @@ test("merged display nodes keep original deep links and per-item learning state"
   ).toBeVisible();
 });
 
+test("focus navigation keeps the selected node's screen position and zoom, including revisits", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`/subjects/${id}/graph?concept=c40&view=all`);
+  const graph = page.locator("#graph");
+  const node = (conceptId: string) =>
+    page.locator(`#graph [data-concept="${conceptId}"]`);
+  const snapshot = (conceptId: string) =>
+    node(conceptId).evaluate((element) => {
+      const node = element as SVGGraphicsElement;
+      const matrix = node.getScreenCTM()!;
+      const viewport = node.ownerSVGElement!.viewBox.baseVal;
+      return {
+        x: matrix.e,
+        y: matrix.f,
+        scale: matrix.a,
+        width: viewport.width,
+        height: viewport.height,
+      };
+    });
+  const expectPreserved = async (
+    conceptId: string,
+    before: Awaited<ReturnType<typeof snapshot>>,
+  ) => {
+    await expect(node(conceptId)).toHaveAttribute("aria-pressed", "true");
+    const after = await snapshot(conceptId);
+    // SVG transforms use float precision; allow less than 0.005 screen pixels.
+    for (const key of ["x", "y"] as const)
+      expect(after[key]).toBeCloseTo(before[key], 2);
+    for (const key of ["scale", "width", "height"] as const)
+      expect(after[key]).toBeCloseTo(before[key], 4);
+  };
+
+  await expect(node("c40")).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "그래프 확대", exact: true }).click();
+  await graph.press("ArrowRight");
+  await graph.press("ArrowDown");
+  const beforeFocus = await snapshot("c40");
+  await page
+    .getByRole("button", { name: "선택 개념 주변", exact: true })
+    .click();
+  await expect(page.locator("#graph [data-concept]")).toHaveCount(3);
+  await expectPreserved("c40", beforeFocus);
+
+  for (const conceptId of ["c41", "c40", "c39"]) {
+    await node(conceptId).press("Shift+ArrowDown");
+    await graph.press("ArrowLeft");
+    await node(conceptId).focus();
+    const before = await snapshot(conceptId);
+    await node(conceptId).press("Enter");
+    await expect(page).toHaveURL(new RegExp(`concept=${conceptId}&view=focus`));
+    await expectPreserved(conceptId, before);
+  }
+});
+
 test("mobile group navigation exposes every group without shrinking all concepts", async ({
   page,
 }) => {

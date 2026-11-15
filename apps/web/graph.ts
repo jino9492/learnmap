@@ -15,6 +15,8 @@ export type GraphArrangements = Map<string, Map<string, GraphPosition>>;
 interface GraphRenderInput {
   name: string;
   graphId?: string;
+  viewportScope?: string;
+  preserveSelectedPosition?: boolean;
   concepts: (Pick<Concept, "id" | "name" | "description"> & {
     groupSize?: number;
     searchText?: string;
@@ -147,6 +149,7 @@ export function createGraph(
   let viewport = { ...full };
   let signature = "";
   let dataSignature = "";
+  let currentViewportScope: string | undefined;
   let positions = new Map<string, GraphPosition>();
   const nodeElements = new Map<string, SVGGElement>();
   const connectedEdges = new Map<string, Set<GraphEdge>>();
@@ -383,6 +386,8 @@ export function createGraph(
   function render({
     name,
     graphId = name,
+    viewportScope = graphId,
+    preserveSelectedPosition = false,
     concepts,
     relations,
     layoutRelations = relations,
@@ -392,6 +397,15 @@ export function createGraph(
     query,
     filter,
   }: GraphRenderInput) {
+    const previousAnchor =
+      preserveSelectedPosition &&
+      currentViewportScope === viewportScope &&
+      selectedId &&
+      nodeElements.has(selectedId)
+        ? positions.get(selectedId)
+        : undefined;
+    const anchor = previousAnchor ? { ...previousAnchor } : undefined;
+    currentViewportScope = viewportScope;
     const progressById = new Map(
       progress.map((item) => [item.conceptId, item]),
     );
@@ -592,7 +606,13 @@ export function createGraph(
     updateBounds();
     if (signature !== nextSignature) {
       signature = nextSignature;
-      fit(visible.length > 18);
+      const nextAnchor = selectedId ? positions.get(selectedId) : undefined;
+      if (anchor && nextAnchor && selectedId && visibleIds.has(selectedId)) {
+        // Translate the camera with the anchor so its screen position and zoom stay fixed.
+        viewport.x += nextAnchor.x - anchor.x;
+        viewport.y += nextAnchor.y - anchor.y;
+        applyViewport();
+      } else fit(visible.length > 18);
     }
     return visible.length;
   }

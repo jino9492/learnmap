@@ -189,6 +189,8 @@ export const GraphPage = () => {
       setCount(
         graph.render({
           graphId: `${subject.id}:radial-branches-v3:${view}:${activeGroup?.id ?? ""}:${view === "focus" ? canonicalSelected : ""}:${query}:${filter}`,
+          viewportScope: subject.id,
+          preserveSelectedPosition: view === "focus",
           name:
             activeGroup && view === "group" ? activeGroup.name : subject.name,
           ...scope,
