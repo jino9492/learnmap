@@ -1,44 +1,42 @@
 import { Link, useSearchParams } from "react-router-dom";
+import { useSubject } from "../../../hooks/useWorkspace";
+import { conceptUrl } from "../../../utils/api";
 import {
-  useOperations,
-  useRefreshSubject,
-  useSubject,
-} from "../../../hooks/useWorkspace";
-import { conceptUrl, pathSchema, post } from "../../../utils/api";
+  buildLearningPath,
+  companionConcepts,
+} from "../../../../../shared/learning-path";
 import { StatusBadge, statusColors } from "../../../components/Shared";
 
 export const PathPage = () => {
   const subject = useSubject();
-  const [params] = useSearchParams();
-  const target = params.get("concept") ?? subject.graph.concepts[0]?.id;
-  const operations = useOperations();
-  const refresh = useRefreshSubject();
-  const steps = subject.path?.steps ?? [];
+  const [params, setParams] = useSearchParams();
+  const target = params.get("concept") ?? undefined;
+  const path = buildLearningPath(subject.graph, subject.progress, target);
+  const steps = path?.steps ?? [];
+  const companions = companionConcepts(
+    subject.graph,
+    steps.map((step) => step.conceptId),
+    Boolean(target),
+  );
+  const nextStep = steps.find(
+    (step) =>
+      subject.progress.find((item) => item.conceptId === step.conceptId)
+        ?.status !== "MASTERED",
+  );
   const mastered = subject.progress.filter(
     (item) => item.status === "MASTERED",
   ).length;
   const weak = subject.progress
     .filter((item) => ["WEAK", "REVIEW_REQUIRED"].includes(item.status))
     .sort((a, b) => a.score - b.score);
-  const generate = () =>
-    void operations.run(
-      "선수 관계와 학습 기록을 분석하고 있습니다.",
-      async () => {
-        const result = await post(
-          `/api/analyses/${subject.id}/path`,
-          pathSchema,
-          { conceptId: target },
-        );
-        await refresh(subject.id);
-        if (result.localization?.warning)
-          operations.notify(result.localization.warning);
-      },
-    );
   return (
     <section id="path-view" className="page-view" aria-labelledby="path-title">
       <div className="page-heading">
-        <h1 id="path-title">오늘의 추천 학습 경로</h1>
-        <p>현재 이해도와 선수 개념을 기준으로 학습 순서를 제안합니다.</p>
+        <h1 id="path-title">학습 경로</h1>
+        <p>
+          학습 전에도 선수 관계를 따라 경로를 확인하고, 이해도에 맞춰 다음
+          학습을 이어가세요.
+        </p>
         <div id="path-tags" className="tags">
           <span className="pill blue">{subject.name}</span>
           <span className="pill neutral">{steps.length}개 개념</span>
@@ -48,13 +46,33 @@ export const PathPage = () => {
         <div className="panel path-card">
           <h2>추천 순서</h2>
           <p className="muted">
-            이해가 부족한 개념의 선수 관계를 따라 구성된 경로입니다.
+            선수 개념을 먼저 배우고, 같은 단계에서는 이해도가 낮은 개념부터
+            학습합니다.
           </p>
+          <label>
+            목표 개념
+            <select
+              aria-label="목표 개념"
+              value={target ?? ""}
+              onChange={(event) =>
+                setParams(
+                  event.target.value ? { concept: event.target.value } : {},
+                )
+              }
+            >
+              <option value="">과목 전체</option>
+              {subject.graph.concepts.map((concept) => (
+                <option key={concept.id} value={concept.id}>
+                  {concept.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div id="path-steps" className="path-steps">
             {steps.map((step, index) => (
               <Link
                 key={step.conceptId}
-                className={`path-step${index === 0 ? " selected" : ""}`}
+                className={`path-step${step.conceptId === nextStep?.conceptId ? " selected" : ""}`}
                 title={step.reason}
                 to={conceptUrl(subject.id, step.conceptId, true)}
               >
@@ -75,25 +93,76 @@ export const PathPage = () => {
             ))}
             {!steps.length && (
               <div className="quiz-empty">
-                <p>아직 추천 경로가 없습니다.</p>
-                <button
-                  className="secondary"
-                  disabled={!target || operations.busy}
-                  onClick={generate}
-                >
-                  선택한 개념으로 경로 생성
-                </button>
+                <p>
+                  {target
+                    ? "선택한 개념의 경로를 찾을 수 없습니다. 목표 개념을 다시 선택해 주세요."
+                    : "자료를 추가하고 분석하면 학습 경로가 표시됩니다."}
+                </p>
               </div>
             )}
           </div>
           <div className="insight">
             <h3>왜 이 순서인가요?</h3>
             <p id="path-reason">
-              {subject.path?.possibleCause ??
-                "그래프에서 목표 개념을 선택하면 선수 관계와 누적 풀이 기록을 바탕으로 학습 순서를 제안합니다."}
+              {path?.possibleCause ??
+                "목표 개념을 선택하면 연결된 선수 개념부터 순서대로 표시합니다."}
             </p>
-            <span className="pill blue">AI 분석 · 원인 후보</span>
+            <span className="pill blue">선수 관계 · 이해도 반영</span>
           </div>
+          <section
+            className="path-companions"
+            aria-labelledby="path-companions-title"
+          >
+            <h3 id="path-companions-title">같이 보면 좋을 개념들</h3>
+            <p className="muted">
+              {target
+                ? "경로의 개념과 연관된 다른 개념들입니다. 관심 있는 개념을 함께 살펴보세요."
+                : "서로 연관된 개념들입니다. 목표 개념을 선택하면 해당 경로와 연관된 다른 개념을 모아 볼 수 있습니다."}
+            </p>
+            {companions.length ? (
+              <ul className="path-companion-list">
+                {companions.map((item) => (
+                  <li key={item.conceptId} className="path-companion-card">
+                    <Link to={conceptUrl(subject.id, item.conceptId)}>
+                      {
+                        subject.graph.concepts.find(
+                          (concept) => concept.id === item.conceptId,
+                        )?.name
+                      }
+                    </Link>
+                    <StatusBadge
+                      status={
+                        subject.progress.find(
+                          (entry) => entry.conceptId === item.conceptId,
+                        )?.status ?? "NOT_STARTED"
+                      }
+                    />
+                    <ul className="path-companion-connections">
+                      {item.connections.map((connection) => (
+                        <li key={connection.conceptId}>
+                          <Link
+                            to={conceptUrl(subject.id, connection.conceptId)}
+                          >
+                            {
+                              subject.graph.concepts.find(
+                                (concept) =>
+                                  concept.id === connection.conceptId,
+                              )?.name
+                            }
+                          </Link>
+                          {connection.reason
+                            ? ` · ${connection.reason}`
+                            : "와 연관된 개념입니다."}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">함께 볼 연관 개념이 아직 없습니다.</p>
+            )}
+          </section>
         </div>
         <aside id="path-progress" className="panel path-progress">
           <h2>학습 진행</h2>
@@ -141,16 +210,16 @@ export const PathPage = () => {
             <h3>추천 경로</h3>
             <div className="score">{steps.length}개 개념</div>
           </div>
-          {steps[0] ? (
+          {nextStep ? (
             <Link
               className="primary"
-              to={conceptUrl(subject.id, steps[0].conceptId, true)}
+              to={conceptUrl(subject.id, nextStep.conceptId, true)}
             >
               학습 시작
             </Link>
           ) : (
             <button className="primary" disabled>
-              학습 시작
+              {steps.length ? "경로 학습 완료" : "학습 시작"}
             </button>
           )}
           <p className="small">

@@ -4,6 +4,9 @@ import { readFile } from "node:fs/promises";
 test("first visit uploads files and opens the new learning space", async ({
   page,
 }) => {
+  await page.route("**/api/workspace", (route) =>
+    route.fulfill({ json: { subjects: [] } }),
+  );
   await page.goto("/");
   await expect(
     page.getByRole("heading", { name: "학습 자료를 나만의 지식 지도로" }),
@@ -131,12 +134,10 @@ test("routes preserve subject and concept across navigation, reload, quiz, and h
   await page.goBack();
   await expect(page.getByText("100점", { exact: true }).first()).toBeVisible();
   await page.getByRole("link", { name: "추천 학습 경로 보기" }).click();
-  await page.getByRole("button", { name: "선택한 개념으로 경로 생성" }).click();
-  await expect(
-    page
-      .locator('.path-step[title="선수 개념부터 차례로 복습합니다."]')
-      .first(),
-  ).toBeVisible();
+  await expect(page.locator("#path-steps .path-step")).toHaveCount(3);
+  await expect(page.locator("#path-steps .path-step").last()).toContainText(
+    concept.name,
+  );
   await page.goto(`/subjects/${other.id}/graph`);
   await expect(
     page.getByRole("heading", { name: "자료구조 지식 그래프" }),

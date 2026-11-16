@@ -11,7 +11,7 @@ import {
   useSubject,
   useRefreshSubject,
 } from "../../../hooks/useWorkspace";
-import { conceptUrl, pathSchema, post } from "../../../utils/api";
+import { conceptUrl, post } from "../../../utils/api";
 import {
   SourceLinks,
   Prerequisites,
@@ -548,28 +548,12 @@ export const GraphPage = () => {
               >
                 이 개념 문제 풀기
               </Link>
-              <button
+              <Link
                 className="secondary full"
-                disabled={busy}
-                onClick={() =>
-                  void operations.run(
-                    "선수 관계와 학습 기록을 분석하고 있습니다.",
-                    async () => {
-                      await post(
-                        `/api/analyses/${subject.id}/path`,
-                        pathSchema,
-                        { conceptId: concept.id },
-                      );
-                      await refresh(subject.id);
-                      navigate(
-                        `/subjects/${subject.id}/learning-path?concept=${encodeURIComponent(concept.id)}`,
-                      );
-                    },
-                  )
-                }
+                to={`/subjects/${subject.id}/learning-path?concept=${encodeURIComponent(concept.id)}`}
               >
                 추천 학습 경로 보기
-              </button>
+              </Link>
             </div>
           </>
         ) : (

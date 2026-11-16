@@ -1,3 +1,4 @@
+import { buildLearningPath } from "../../shared/learning-path.ts";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { logAiEvent } from "./ai/core/logging.ts";
@@ -318,7 +319,10 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         const subject = subjects.get(subjectMatch[1]);
         if (!subject) throw new HttpError(404, "과목을 찾을 수 없습니다.");
         const combined = combineSubject(subject, analyses);
-        send(response, 200, { id: subject.id, name: subject.name, graph: { concepts: combined.concepts, relations: combined.relations, equivalences: combined.equivalences, coreGroups: combined.coreGroups }, materials: combined.materials, progress: [...subject.progress.values()].map(learningProgress), history: subject.history, path: subject.path });
+        const progress = [...subject.progress.values()].map(learningProgress);
+        const targetId = subject.path?.steps.at(-1)?.conceptId;
+        const path = buildLearningPath(combined, progress, combined.concepts.some((concept) => concept.id === targetId) ? targetId : undefined);
+        send(response, 200, { id: subject.id, name: subject.name, graph: { concepts: combined.concepts, relations: combined.relations, equivalences: combined.equivalences, coreGroups: combined.coreGroups }, materials: combined.materials, progress, history: subject.history, path });
         return;
       }
       const materialMatch = /^\/api\/materials\/([a-f0-9-]+)(?:\/(file|analyze))?$/.exec(url.pathname);
