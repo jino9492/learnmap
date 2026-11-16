@@ -1,3 +1,4 @@
+import { createBrowserFetch } from "./browser-fetch.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -7,6 +8,7 @@ import { analyzeRelations, generateQuestion, AiError } from '../apps/api/src/ai/
 
 test('on-demand publishing eliminates upfront lesson requests and preserves the graph on failed expansion', async () => {
   for (const mode of ['on-demand', 'eager']) {
+    const { fetch } = createBrowserFetch();
     const calls = [];
     let fail = false;
     const server = createDemoServer({ env: { AI_DETAIL_MODE: mode }, clientFactory: () => ({ async generate(request) {

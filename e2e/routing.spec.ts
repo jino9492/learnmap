@@ -23,8 +23,8 @@ test("first visit uploads files and opens the new learning space", async ({
 
 test("routes preserve subject and concept across navigation, reload, quiz, and history", async ({
   page,
-  request,
 }) => {
+  const request = page.request;
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const subject = await (
@@ -163,6 +163,7 @@ test("routes preserve subject and concept across navigation, reload, quiz, and h
 test("create subject and upload, reanalyze, and delete material from the React UI", async ({
   page,
 }) => {
+  await page.request.post("/api/subjects", { data: { name: "기존 과목" } });
   await page.goto("/");
   await page.getByRole("link", { name: "내 학습 공간" }).click();
   await page.getByRole("button", { name: "과목 추가" }).click();
@@ -211,10 +212,8 @@ test("create subject and upload, reanalyze, and delete material from the React U
   ).toBeVisible();
 });
 
-test("preserves the original desktop and mobile layout", async ({
-  page,
-  request,
-}) => {
+test("preserves the original desktop and mobile layout", async ({ page }) => {
+  const request = page.request;
   const subject = await (
     await request.post("/api/subjects", { data: { name: "스타일 검증" } })
   ).json();
@@ -225,7 +224,7 @@ test("preserves the original desktop and mobile layout", async ({
   ).toBeVisible();
   await expect(page.locator(".topbar nav a")).toHaveCount(3);
   await expect(page.locator(".topbar .search")).toBeVisible();
-  await expect(page.locator(".topbar .avatar")).toBeVisible();
+  await expect(page.locator(".topbar .account-button")).toBeVisible();
   await expect(
     page.locator(".sidebar .material-section .upload-card"),
   ).toBeVisible();
@@ -272,8 +271,8 @@ test("preserves the original desktop and mobile layout", async ({
 
 test("quiz grades only after all answers and reveals feedback together, resuming failed grading", async ({
   page,
-  request,
 }) => {
+  const request = page.request;
   const subject = await (
     await request.post("/api/subjects", { data: { name: "일괄 채점" } })
   ).json();

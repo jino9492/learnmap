@@ -1,0 +1,126 @@
+#account-dialog {
+  width: min(440px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 28px;
+}
+#account-dialog .account-form {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+  min-width: 0;
+}
+.account-form h2,
+.account-form p {
+  margin: 0;
+}
+.account-form h2 {
+  font-size: 22px;
+  line-height: 1.4;
+}
+.account-form p {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.account-fields {
+  display: grid;
+  gap: 16px;
+}
+#account-dialog .account-fields label {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+#account-dialog .account-fields input {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+.account-fields small {
+  margin-top: -8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.account-form .account-email {
+  color: inherit;
+  font-weight: 600;
+}
+.account-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 10px;
+  padding-top: 4px;
+}
+.account-actions button {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+.account-switch {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  padding: 16px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+#account-dialog > [role="alert"] {
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  #account-dialog {
+    padding: 24px;
+  }
+}
+.account-button {
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .landing-header {
+    flex-wrap: wrap;
+  }
+}
+
+.account-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 24px;
+  padding: 20px 24px;
+  background: #f0f5ff;
+  border: 1px solid #dce6f8;
+  border-radius: 14px;
+}
+.account-recovery p {
+  margin: 6px 0 0;
+  color: #64748b;
+  line-height: 1.6;
+  font-size: 14px;
+}
+.account-recovery button {
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .account-recovery {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px;
+  }
+}

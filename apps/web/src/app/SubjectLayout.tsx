@@ -1,3 +1,4 @@
+import { AccountButton, AccountStorageNotice } from "../features/accounts";
 import { useEffect, useState } from "react";
 import {
   Link,
@@ -50,10 +51,12 @@ export const SubjectLayout = () => {
   const [create, setCreate] = useState(false);
   const [name, setName] = useState("");
   const workspace = useQuery({
+    refetchOnWindowFocus: true,
     queryKey: ["workspace"],
     queryFn: () => request("/api/workspace", workspaceSchema),
   });
   const query = useQuery({
+    refetchOnWindowFocus: true,
     queryKey: subjectKey(subjectId),
     queryFn: () =>
       request(`/api/subjects/${encodeURIComponent(subjectId)}`, subjectSchema),
@@ -161,10 +164,7 @@ export const SubjectLayout = () => {
         >
           자료 추가
         </button>
-        <div className="avatar" aria-label="로컬 학습자">
-          <img src="/assets/avatar.svg" width="36" height="36" alt="" />
-          <span>LM</span>
-        </div>
+        <AccountButton />
       </header>
       <FeedbackBanners />
       <div
@@ -222,8 +222,7 @@ export const SubjectLayout = () => {
             </button>
           </div>
           <div className="sidebar-bottom">
-            <span className="pill neutral">개인 학습 공간</span>
-            <p>자료와 학습 기록은 이 컴퓨터에 저장됩니다.</p>
+            <AccountStorageNotice />
           </div>
         </aside>
         <main id="main" tabIndex={-1}>

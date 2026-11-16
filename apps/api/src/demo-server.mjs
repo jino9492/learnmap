@@ -1,3 +1,4 @@
+import { createAccounts } from './features/accounts/index.mjs';
 import { buildLearningPath } from "../../shared/learning-path.ts";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
@@ -53,7 +54,7 @@ function text(value, name) {
 
 function errorInfo(error) {
   if (error instanceof AiError) return { code: error.code, message: error.message, ...(error.reason ? { reason: error.reason } : {}) };
-  if (error instanceof HttpError) return { code: "INPUT", message: error.message };
+  if (error instanceof HttpError || Number.isInteger(error.status)) return { code: "INPUT", message: error.message };
   return { code: "INTERNAL", message: "The demo could not complete this operation." };
 }
 
@@ -65,6 +66,8 @@ function send(response, status, value) {
 export function createDemoServer({ env = process.env, storagePath, clientFactory = (onEvent) => createConfiguredClient(env, { onEvent }) } = {}) {
   const workspace = createWorkspace(storagePath);
   const { analyses, subjects } = workspace;
+  const publicOrigin = env.APP_ORIGIN ? new URL(env.APP_ORIGIN).origin : null;
+  const accounts = createAccounts(workspace, { secure: publicOrigin?.startsWith('https:'), allowLegacyImport: !publicOrigin });
   const cache = createAnalysisCache();
   const subjectLinks = new Map();
   const assets = new Map([
@@ -257,8 +260,8 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
     try {
       await workspace.initialized;
       const allowedHosts = [`127.0.0.1:${request.socket.localPort}`, `localhost:${request.socket.localPort}`];
-      if (!allowedHosts.includes(request.headers.host)) throw new HttpError(403, "Local demo requests only.");
-      if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) throw new HttpError(403, "Cross-origin requests are not allowed.");
+      if (!allowedHosts.includes(request.headers.host) && (!publicOrigin || request.headers.host !== new URL(publicOrigin).host)) throw new HttpError(403, "Local demo requests only.");
+      if (request.headers.origin && request.headers.origin !== (publicOrigin ?? `http://${request.headers.host}`)) throw new HttpError(403, "Cross-origin requests are not allowed.");
       const url = new URL(request.url, `http://${request.headers.host}`);
       const compiled = request.method === 'GET' ? await webAsset(url.pathname) : null;
       if (compiled) {
@@ -279,8 +282,15 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         response.end(content);
         return;
       }
+      const identity = accounts.identify(request, response);
+      const owns = (item) => item?.ownerId === identity.ownerId;
+      if (url.pathname === '/api/account' || url.pathname.startsWith('/api/account/')) {
+        const input = request.method === 'POST' ? await jsonBody(request) : {};
+        send(response, 200, await accounts.handle(url.pathname, request, response, identity, input));
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/api/workspace") {
-        send(response, 200, { subjects: [...subjects.values()].map((subject) => {
+        send(response, 200, { subjects: [...subjects.values()].filter(owns).map((subject) => {
           const combined = combineSubject(subject, analyses);
           return { id: subject.id, name: subject.name, conceptCount: combined.concepts.length, materialCount: combined.materials.length };
         }) });
@@ -290,7 +300,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         const input = await jsonBody(request);
         const name = text(input.name, "subject name").trim();
         if (name.length > 80) throw new HttpError(400, "과목명은 80자 이내로 입력해 주세요.");
-        const subject = { id: randomUUID(), name, questions: new Map(), progress: new Map(), history: [], path: null };
+        const subject = { id: randomUUID(), ownerId: identity.ownerId, name, questions: new Map(), progress: new Map(), history: [], path: null };
         subjects.set(subject.id, subject);
         await workspace.save();
         send(response, 201, { id: subject.id, name });
@@ -299,7 +309,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       const organizeMatch = /^\/api\/subjects\/([a-f0-9-]+)\/organize$/.exec(url.pathname);
       if (organizeMatch && request.method === 'POST') {
         const subject = subjects.get(organizeMatch[1]);
-        if (!subject) throw new HttpError(404, '과목을 찾을 수 없습니다.');
+        if (!owns(subject)) throw new HttpError(404, '과목을 찾을 수 없습니다.');
         if (subject.busy || [...analyses.values()].some((job) => job.subjectId === subject.id && !['ready', 'failed'].includes(job.status))) throw new HttpError(409, '현재 분석이 끝난 뒤 개념을 정리해 주세요.');
         subject.busy = true;
         try {
@@ -317,7 +327,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       const subjectMatch = /^\/api\/subjects\/([a-f0-9-]+)$/.exec(url.pathname);
       if (subjectMatch && request.method === "GET") {
         const subject = subjects.get(subjectMatch[1]);
-        if (!subject) throw new HttpError(404, "과목을 찾을 수 없습니다.");
+        if (!owns(subject)) throw new HttpError(404, "과목을 찾을 수 없습니다.");
         const combined = combineSubject(subject, analyses);
         const progress = [...subject.progress.values()].map(learningProgress);
         const targetId = subject.path?.steps.at(-1)?.conceptId;
@@ -328,7 +338,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       const materialMatch = /^\/api\/materials\/([a-f0-9-]+)(?:\/(file|analyze))?$/.exec(url.pathname);
       if (materialMatch) {
         const job = analyses.get(materialMatch[1]);
-        if (!job) throw new HttpError(404, "학습 자료를 찾을 수 없습니다.");
+        if (!owns(job)) throw new HttpError(404, "학습 자료를 찾을 수 없습니다.");
         if (request.method === "GET" && materialMatch[2] === "file") {
           response.writeHead(200, { "Content-Type": job.filename.toLowerCase().endsWith(".pdf") ? "application/pdf" : "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff", "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(job.filename)}`, "Cache-Control": "no-store" });
           response.end(Buffer.from(job.bytes, "base64"));
@@ -372,11 +382,11 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         if (!/\.(pdf|txt|md)$/i.test(name)) throw new HttpError(400, "PDF, TXT 또는 Markdown 파일을 선택해 주세요.");
         const subjectId = url.searchParams.get("subjectId") || undefined;
         if (!subjectId && !name.toLowerCase().endsWith(".pdf")) throw new HttpError(400, "Select a PDF file.");
-        if (subjectId && !subjects.has(subjectId)) throw new HttpError(404, "과목을 찾을 수 없습니다.");
+        if (subjectId && !owns(subjects.get(subjectId))) throw new HttpError(404, "과목을 찾을 수 없습니다.");
         if (subjectId && subjects.get(subjectId).busy) throw new HttpError(409, "학습 작업이 끝난 후 자료를 추가해 주세요.");
         const bytes = await body(request, 20 * 1024 * 1024);
         if (!bytes.length) throw new HttpError(400, "The PDF file is empty.");
-        const job = { id: randomUUID(), subjectId, filename: name, bytes: bytes.toString("base64"), mode, status: "queued", busy: false, events: [], error: null, questions: new Map(), progress: new Map() };
+        const job = { id: randomUUID(), ownerId: identity.ownerId, subjectId, filename: name, bytes: bytes.toString("base64"), mode, status: "queued", busy: false, events: [], error: null, questions: new Map(), progress: new Map() };
         analyses.set(job.id, job);
         await workspace.save();
         send(response, 202, { id: job.id });
@@ -387,7 +397,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       if (!match) throw new HttpError(404, "Not found.");
       const subject = subjects.get(match[1]);
       const job = subject ? combineSubject(subject, analyses) : analyses.get(match[1]);
-      if (!job) throw new HttpError(404, "Analysis not found. Upload the PDF again if the server restarted.");
+      if (!owns(job)) throw new HttpError(404, "Analysis not found. Upload the PDF again if the server restarted.");
       if (request.method === "GET" && !match[2]) { send(response, 200, snapshot(job)); return; }
       if (request.method !== "POST" || !match[2]) throw new HttpError(405, "Method not allowed.");
       if (job.status !== "ready" || job.busy) throw new HttpError(409, "Wait for the current operation to finish.");
@@ -473,7 +483,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         }
       } finally { job.busy = false; if (subject) subject.busy = false; }
     } catch (error) {
-      const status = error instanceof HttpError ? error.status : error instanceof AiError ? ({ INPUT: 400, CONFIG: 503, TIMEOUT: 504, REFUSAL: 422 }[error.code] ?? 502) : 500;
+      const status = Number.isInteger(error.status) ? error.status : error instanceof AiError ? ({ INPUT: 400, CONFIG: 503, TIMEOUT: 504, REFUSAL: 422 }[error.code] ?? 502) : 500;
       if (!response.headersSent) send(response, status, { error: errorInfo(error) });
       else response.end();
     }

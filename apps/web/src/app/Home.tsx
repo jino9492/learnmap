@@ -1,3 +1,4 @@
+import { AccountButton, AccountRecovery } from "../features/accounts";
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -22,6 +23,7 @@ const remembered = () => {
 
 export const Home = () => {
   const workspace = useQuery({
+    refetchOnWindowFocus: true,
     queryKey: ["workspace"],
     queryFn: () => request("/api/workspace", workspaceSchema),
   });
@@ -113,17 +115,21 @@ export const Home = () => {
           <a href="#how-it-works">이용 방법</a>
           <a href="#learning-preview">학습 지도 소개</a>
         </nav>
-        {selected ? (
-          <Link className="secondary compact" to={subjectUrl(selected.id)}>
-            내 학습 공간 <span aria-hidden="true">↗</span>
-          </Link>
-        ) : (
-          <a className="secondary compact" href="#start-learning">
-            시작하기 ↗
-          </a>
-        )}
+        <div className="landing-header-actions">
+          {selected ? (
+            <Link className="secondary compact" to={subjectUrl(selected.id)}>
+              내 학습 공간 <span aria-hidden="true">↗</span>
+            </Link>
+          ) : (
+            <a className="secondary compact" href="#start-learning">
+              시작하기 ↗
+            </a>
+          )}
+          <AccountButton />
+        </div>
       </header>
       <main id="main" className="landing-main">
+        <AccountRecovery />
         <section className="landing-hero" aria-labelledby="landing-title">
           <p className="landing-eyebrow">자료에서 개념으로, 개념에서 이해로</p>
           <h1 id="landing-title">

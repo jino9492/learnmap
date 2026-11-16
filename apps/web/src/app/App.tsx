@@ -1,3 +1,4 @@
+import { AccountProvider } from "../features/accounts";
 import { useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { errorMessage } from "../utils/api";
@@ -50,28 +51,30 @@ export const App = () => {
         notify: setMessage,
       }}
     >
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <>
-              <FeedbackBanners />
-              <Home />
-            </>
-          }
-        />
-        <Route path="/subjects/:subjectId" element={<SubjectLayout />}>
-          <Route index element={<Navigate replace to="graph" />} />
-          <Route path="graph" element={<GraphPage />} />
-          <Route path="materials" element={<MaterialsPage />} />
-          <Route path="concepts/:conceptId" element={<ConceptPage />} />
-          <Route path="concepts/:conceptId/quiz" element={<QuizPage />} />
-          <Route path="learning-path" element={<PathPage />} />
-          <Route path="history" element={<HistoryPage />} />
+      <AccountProvider>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                <FeedbackBanners />
+                <Home />
+              </>
+            }
+          />
+          <Route path="/subjects/:subjectId" element={<SubjectLayout />}>
+            <Route index element={<Navigate replace to="graph" />} />
+            <Route path="graph" element={<GraphPage />} />
+            <Route path="materials" element={<MaterialsPage />} />
+            <Route path="concepts/:conceptId" element={<ConceptPage />} />
+            <Route path="concepts/:conceptId/quiz" element={<QuizPage />} />
+            <Route path="learning-path" element={<PathPage />} />
+            <Route path="history" element={<HistoryPage />} />
+            <Route path="*" element={<NotFound />} />
+          </Route>
           <Route path="*" element={<NotFound />} />
-        </Route>
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+        </Routes>
+      </AccountProvider>
     </OperationsContext.Provider>
   );
 };

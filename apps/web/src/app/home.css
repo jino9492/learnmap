@@ -33,9 +33,15 @@
   color: #66738a;
   font-size: 14px;
 }
-.landing-header > .secondary {
+.landing-header-actions {
   margin-left: auto;
-  gap: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.landing-header-actions > .secondary {
+  gap: 8px;
   min-height: 42px;
 }
 .landing a:hover {
@@ -351,7 +357,10 @@
   .landing-brand {
     font-size: 22px;
   }
-  .landing-header > .secondary {
+  .landing-header-actions {
+    gap: 8px;
+  }
+  .landing-header-actions > .secondary {
     font-size: 12px;
     padding: 8px 12px;
   }
@@ -428,5 +437,18 @@
   .landing-footer p {
     order: 3;
     width: 100%;
+  }
+}
+
+@media (max-width: 380px) {
+  .landing-header {
+    gap: 10px;
+    padding-inline: 16px;
+  }
+  .landing-brand {
+    font-size: 20px;
+  }
+  .landing-header-actions > .secondary {
+    padding-inline: 9px;
   }
 }

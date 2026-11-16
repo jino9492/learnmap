@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 
 test("unstarted subjects expose a path immediately and graph links need no AI recommendation", async ({
   page,
-  request,
 }) => {
+  const request = page.request;
   const subject = await (
     await request.post("/api/subjects", { data: { name: "기본 학습 경로" } })
   ).json();

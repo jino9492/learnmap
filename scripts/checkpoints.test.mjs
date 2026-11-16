@@ -1,3 +1,4 @@
+import { createBrowserFetch } from "./browser-fetch.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, writeFile, rm } from "node:fs/promises";
@@ -288,6 +289,7 @@ test("cloud relation concurrency defaults to four, honors overrides and keeps Ol
 
 test("completed file stages are reused after restarting the API server", async () =>
   temporary(async (directory) => {
+    const { fetch } = createBrowserFetch();
     let calls = 0;
     let server;
     const storagePath = join(directory, "workspace.json");

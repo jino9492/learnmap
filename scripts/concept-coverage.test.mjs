@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { createBrowserFetch } from "./browser-fetch.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -70,12 +72,15 @@ test('mastery uses all assessment questions, including questions beyond the old 
 test('question sets grade cumulatively, survive restart, reject duplicate and superseded answers, and feed paths', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'learnmap-coverage-'));
   const storagePath = join(directory, 'workspace.json');
+  const guestToken = 'a'.repeat(64);
+  const ownerId = `guest:${createHash('sha256').update(guestToken).digest('hex')}`;
+  const { fetch } = createBrowserFetch([['learnmap.guest', guestToken]]);
   const workspace = createWorkspace(storagePath);
   await workspace.initialized;
   const id = '11111111-1111-4111-8111-111111111111';
   const subjectId = '22222222-2222-4222-8222-222222222222';
-  workspace.subjects.set(subjectId, { id: subjectId, name: '과목', questions: new Map(), progress: new Map(), history: [], path: null });
-  workspace.analyses.set(id, { id, subjectId, status: 'ready', material, concepts: [concept], relations: [], questions: new Map(), progress: new Map() });
+  workspace.subjects.set(subjectId, { id: subjectId, ownerId, name: '과목', questions: new Map(), progress: new Map(), history: [], path: null });
+  workspace.analyses.set(id, { id, ownerId, subjectId, status: 'ready', material, concepts: [concept], relations: [], questions: new Map(), progress: new Map() });
   await workspace.save();
   let failGeneration = false;
   let failExpansion = false;

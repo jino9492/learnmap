@@ -9,12 +9,16 @@ import { representativeConceptGroups } from '../knowledge-graph/core-groups.ts';
 export function createWorkspace(storagePath) {
   const analyses = new Map();
   const subjects = new Map();
+  const users = new Map();
+  const sessions = new Map();
   let pending = Promise.resolve();
   const initialized = (async () => {
     if (!storagePath) return;
     let data;
     try { data = JSON.parse(await readFile(storagePath, "utf8")); }
     catch (error) { if (error.code === "ENOENT") return; throw error; }
+    for (const item of data.users ?? []) users.set(item.id, item);
+    for (const [key, value] of data.sessions ?? []) sessions.set(key, value);
     for (const item of data.analyses ?? []) {
       const job = { ...item, questions: new Map(item.questions), progress: new Map(item.progress), busy: false };
       if (!["ready", "failed"].includes(job.status)) {
@@ -32,7 +36,7 @@ export function createWorkspace(storagePath) {
   function save() {
     if (!storagePath) return Promise.resolve();
     const serialize = (item) => ({ ...item, ...(item.status === 'saving' ? { status: 'ready' } : {}), client: undefined, questions: [...item.questions], progress: [...item.progress] });
-    const data = JSON.stringify({ analyses: [...analyses.values()].map(serialize), subjects: [...subjects.values()].map(serialize) });
+    const data = JSON.stringify({ users: [...users.values()], sessions: [...sessions], analyses: [...analyses.values()].map(serialize), subjects: [...subjects.values()].map(serialize) });
     const next = pending.catch(() => undefined).then(async () => {
       await mkdir(dirname(storagePath), { recursive: true });
       await writeFile(`${storagePath}.tmp`, data, { mode: 0o600 });
@@ -41,7 +45,7 @@ export function createWorkspace(storagePath) {
     pending = next;
     return next;
   }
-  return { analyses, subjects, initialized, save };
+  return { analyses, subjects, users, sessions, initialized, save };
 }
 
 export function conceptContentKey(concept) {
