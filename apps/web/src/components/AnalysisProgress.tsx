@@ -6,6 +6,7 @@ import { request, type Material } from "../utils/api";
 const analysisStateSchema = z.object({
   status: z.string(),
   mode: z.string().optional(),
+  queueState: z.object({ waiting: z.number(), active: z.number() }).optional(),
   events: z.array(
     z.object({
       kind: z.string(),

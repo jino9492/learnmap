@@ -29,8 +29,10 @@ export function analysisProgress(job) {
   const latest = progress.at(-1);
   // Rounds and adaptive batches can reset their counters. Never move backwards.
   const fraction = progress.reduce((maximum, event) => Math.max(maximum, Math.min(1, Math.max(0, event.completed / event.total))), 0);
+  const waiting = !['ready', 'failed'].includes(job.status) && job.queueState?.waiting > 0 && job.queueState.active === 0;
   return {
-    stage, label: job.status === "failed" ? `${label} 중단` : label,
+    stage, label: job.status === "failed" ? `${label} 중단` : waiting ? `대기 중 · ${label}` : label,
+    waiting,
     percent: Math.floor(start + (end - start) * fraction),
     ...(latest ? { completed: latest.completed, total: latest.total } : {}),
   };

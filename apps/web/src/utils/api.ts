@@ -44,6 +44,7 @@ export const materialSchema = z.object({
       stage: z.string(),
       label: z.string(),
       percent: z.number().min(0).max(100),
+      waiting: z.boolean().optional(),
       completed: z.number().optional(),
       total: z.number().optional(),
     })
@@ -60,6 +61,7 @@ export const workspaceSchema = z.object({
   ),
 });
 export const subjectSchema = z.object({
+  queueState: z.object({ waiting: z.number(), active: z.number() }).optional(),
   id: z.string(),
   name: z.string(),
   graph: z.object({
@@ -184,7 +186,9 @@ export const post = <T>(
     /\/api\/analyses\/[^/]+\/(details|questions|evaluations|path)$/.exec(
       url,
     )?.[1];
-  return action ? withAiLoading(action, run) : run();
+  return action
+    ? withAiLoading(action, run, url.slice(0, url.lastIndexOf("/")))
+    : run();
 };
 export const subjectKey = (id: string) => ["subject", id];
 export const subjectUrl = (id: string, page = "graph") =>

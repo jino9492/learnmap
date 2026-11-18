@@ -1,5 +1,52 @@
 import { test, expect } from "@playwright/test";
 
+test("interactive loading dialog shows queue wait and resumes automatically", async ({
+  page,
+}) => {
+  let waiting = true;
+  await page.route("**/api/analyses/queue-dialog", (route) =>
+    route.fulfill({
+      json: {
+        queueState: waiting
+          ? { waiting: 1, active: 0 }
+          : { waiting: 0, active: 1 },
+      },
+    }),
+  );
+  await page.goto("/");
+  await page.evaluate(async () => {
+    const path = "/loading.js";
+    const { createAiLoading } = await import(path);
+    void createAiLoading()(
+      "questions",
+      () =>
+        new Promise<void>((resolve) => {
+          (
+            window as unknown as { finishQueueTest: () => void }
+          ).finishQueueTest = resolve;
+        }),
+      "/api/analyses/queue-dialog",
+    );
+  });
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("heading", { name: "대기 중", exact: true }),
+  ).toBeVisible();
+  waiting = false;
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("heading", {
+        name: "학습 자료를 바탕으로 문제를 생성하고 있어요",
+      }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (window as unknown as { finishQueueTest: () => void }).finishQueueTest(),
+  );
+  await expect(page.locator("dialog.ai-loading")).not.toBeVisible();
+});
+
 test("an already-running server without the progress field uses its live analysis log", async ({
   page,
 }) => {
@@ -94,6 +141,7 @@ test("generation progress only reflects the active material across polling and r
   let percent = 0;
   let status = "extracting_concepts";
   let secondActive = false;
+  let waiting = false;
   await page.route("**/api/workspace", (route) =>
     route.fulfill({
       json: {
@@ -134,7 +182,12 @@ test("generation progress only reflects the active material across polling and r
             status,
             analysisProgress: {
               stage: status,
-              label: status === "saving" ? "학습 지도 저장" : "개념 추출",
+              label: waiting
+                ? "대기 중 · 개념 추출"
+                : status === "saving"
+                  ? "학습 지도 저장"
+                  : "개념 추출",
+              waiting,
               percent,
               completed: 1,
               total: 2,
@@ -177,9 +230,30 @@ test("generation progress only reflects the active material across polling and r
     }),
   ).toHaveAttribute("value", "80");
   secondActive = false;
+  waiting = true;
+  await page.getByRole("button", { name: "상태 새로고침" }).click();
+  await expect(
+    page
+      .locator(".material-list")
+      .getByText("대기 중 · 개념 추출", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("분석.txt · 대기 중 · 개념 추출 · 1/2묶음 처리"),
+  ).toBeVisible();
+  await expect(material).toHaveAttribute("value", "30");
+  await page.reload();
+  await expect(
+    page
+      .locator(".material-list")
+      .getByText("대기 중 · 개념 추출", { exact: true }),
+  ).toBeVisible();
+  waiting = false;
   percent = 99;
   status = "saving";
   await expect(material).toHaveAttribute("value", "99");
+  await expect(
+    page.getByText("대기 중 · 개념 추출", { exact: true }),
+  ).toHaveCount(0);
   await page.reload();
   await expect(material).toHaveAttribute("value", "99");
   status = "ready";

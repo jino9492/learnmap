@@ -3,6 +3,7 @@ import { AiError, ensure } from "./errors.ts";
 import { isRecord } from "./schema.ts";
 import { randomUUID } from "node:crypto";
 import { logAiEvent } from "./logging.ts";
+import { aiRequestQueue, usageTokens, type UsageRequestQueue } from "./queue.ts";
 
 export interface UsageEvent {
   provider: string;
@@ -22,6 +23,7 @@ export interface UsageEvent {
 }
 
 export interface TransportOptions {
+  scheduler?: UsageRequestQueue;
   timeoutMs?: number;
   fetcher?: typeof fetch;
   onEvent?: (event: UsageEvent) => void;
@@ -95,8 +97,12 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
       let contextTokens = adapter.contextRecovery?.initialTokens;
       let recoveredContext = false;
       for (let attempt = 1; attempt <= attemptLimit; attempt++) {
+        // Reserve input bytes plus the providers' maximum 6000 output tokens.
+        // Every retry obtains a new lease and counts against the same budget.
+        const lease = await (options.scheduler ?? aiRequestQueue).acquire(Buffer.byteLength(body, "utf8") + 6000, request.name, request.deadlineAt);
+        let chargedTokens: number | undefined;
         const remainingMs = request.deadlineAt === undefined ? timeoutMs : Math.min(timeoutMs, request.deadlineAt - Date.now());
-        if (remainingMs <= 0) throw new AiError("TIMEOUT", "The analysis deadline was reached.");
+        if (remainingMs <= 0) { lease.finish(0); throw new AiError("TIMEOUT", "The analysis deadline was reached."); }
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), remainingMs);
         const startedAt = Date.now();
@@ -150,6 +156,7 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
           try { raw = JSON.parse(responseBody); }
           catch { throw new AiError("FORMAT", "The provider returned invalid JSON."); }
           const result = adapter.output(raw);
+          chargedTokens = usageTokens(result.usage);
           let parsed: unknown;
           try { parsed = JSON.parse(result.text); }
           catch { throw new AiError("FORMAT", "The model returned invalid JSON."); }
@@ -175,7 +182,7 @@ export function createJsonClient(adapter: ProviderAdapter, options: TransportOpt
             continue;
           }
           throw failure;
-        } finally { clearTimeout(timer); }
+        } finally { clearTimeout(timer); lease.finish(chargedTokens); }
       }
       throw new AiError("CONNECTION", "LLM request failed.");
     },

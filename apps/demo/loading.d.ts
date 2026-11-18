@@ -1,1 +1,1 @@
-export function createAiLoading(): <T>(action: string, run: () => Promise<T>) => Promise<T>;
+export function createAiLoading(): <T>(action: string, run: () => Promise<T>, statusUrl?: string) => Promise<T>;

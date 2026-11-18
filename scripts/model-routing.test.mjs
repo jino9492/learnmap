@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createConfiguredClient } from '../apps/api/src/ai/core/config.ts';
 import { object, text } from '../apps/api/src/ai/core/schema.ts';
 import { analysisCacheScope } from '../apps/api/src/features/material-analysis/cache.mjs';
+import { UsageRequestQueue } from '../apps/api/src/ai/core/queue.ts';
 
 const schema = object({ value: text });
 const reasoningTasks = ['relation_analysis', 'relation_review', 'relation_adjudication'];
@@ -22,7 +23,7 @@ for (const provider of ['openai', 'gemini', 'ollama']) {
     const calls = [];
     const env = { AI_PROVIDER: provider, [`${prefix}_MODEL`]: 'reasoning-model',
       [`${prefix}_FAST_MODEL`]: 'fast-model', [`${prefix}_API_KEY`]: 'test-key' };
-    const client = createConfiguredClient(env, { fetcher: async (url, options) => {
+    const client = createConfiguredClient(env, { scheduler: new UsageRequestQueue({ tokens: 10000000, requests: 1000 }), fetcher: async (url, options) => {
       const body = JSON.parse(options.body);
       const model = provider === 'gemini' ? url.match(/\/models\/([^:]+):generateContent$/)[1] : body.model;
       calls.push({ model, body });
@@ -39,7 +40,7 @@ for (const provider of ['openai', 'gemini', 'ollama']) {
 
   test(`${provider}: absent fast model preserves single-model configurations`, async () => {
     const env = { AI_PROVIDER: provider, [`${prefix}_MODEL`]: 'single-model', [`${prefix}_API_KEY`]: 'test-key' };
-    const client = createConfiguredClient(env, { fetcher: async (url, options) => {
+    const client = createConfiguredClient(env, { scheduler: new UsageRequestQueue({ tokens: 10000000, requests: 1000 }), fetcher: async (url, options) => {
       const body = JSON.parse(options.body);
       assert.equal(provider === 'gemini' ? url.match(/\/models\/([^:]+):generateContent$/)[1] : body.model, 'single-model');
       return Response.json(envelope());

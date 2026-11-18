@@ -70,7 +70,9 @@ export const SidebarMaterials = () => {
               <small>
                 {material.error
                   ? "분석 오류 · 다시 분석해 주세요"
-                  : labels[material.status]}
+                  : material.analysisProgress?.waiting
+                    ? material.analysisProgress.label
+                    : labels[material.status]}
               </small>
             </div>
           );

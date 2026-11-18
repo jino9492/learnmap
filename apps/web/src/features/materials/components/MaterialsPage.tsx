@@ -57,7 +57,9 @@ export const MaterialsPage = () => {
               </a>
             </h2>
             <p role="status">
-              {materialLabels[material.status] ?? material.status}
+              {material.analysisProgress?.waiting
+                ? material.analysisProgress.label
+                : (materialLabels[material.status] ?? material.status)}
             </p>
             {Boolean(material.error) && (
               <p className="red" role="alert">

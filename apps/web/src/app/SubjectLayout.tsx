@@ -61,6 +61,7 @@ export const SubjectLayout = () => {
     queryFn: () =>
       request(`/api/subjects/${encodeURIComponent(subjectId)}`, subjectSchema),
     refetchInterval: (query) =>
+      operations.busy ||
       query.state.data?.materials.some(
         (item) => !["ready", "failed"].includes(item.status),
       )
@@ -166,7 +167,11 @@ export const SubjectLayout = () => {
         </button>
         <AccountButton />
       </header>
-      <FeedbackBanners />
+      <FeedbackBanners
+        waiting={Boolean(
+          subject.queueState?.waiting && !subject.queueState.active,
+        )}
+      />
       <div
         id="workspace"
         className={`workspace${location.pathname.endsWith("/graph") ? "" : " wide"}`}

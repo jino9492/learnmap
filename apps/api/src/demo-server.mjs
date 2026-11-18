@@ -1,3 +1,4 @@
+import { scopedAiClient } from "./ai/core/queue.ts";
 import { createAccounts } from './features/accounts/index.mjs';
 import { buildLearningPath } from "../../shared/learning-path.ts";
 import { createServer } from "node:http";
@@ -82,7 +83,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
 
   function snapshot(job) {
     return {
-      id: job.id, status: job.status, busy: job.busy, mode: job.mode,
+      id: job.id, status: job.status, busy: job.busy, mode: job.mode, queueState: job.queueState,
       material: job.material ? { id: job.material.id, title: job.material.title, sourceCount: job.material.sources.length } : null,
       graph: job.status === "ready" ? { concepts: job.concepts, relations: job.relations } : null,
       detailedConcepts: job.status === "ready" && job.mode === "conceptual" ? job.detailedConcepts : undefined,
@@ -151,16 +152,17 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       job.status = "extracting_text";
       job.material = await measureAnalysisStage("text", () => loadMaterialBytes(name, bytes), report);
       job.client = clientFactory((event) => job.events.push({ kind: "request", ...event }));
+      const graphClient = scopedAiClient(job.client, "graph", (state) => { job.queueState = state; });
       const progress = (event) => report({ kind: "progress", ...event });
       job.status = "extracting_concepts";
       job.detailedConcepts = await stage("concepts", [job.material, detailMode], async () => {
-        const concepts = await extractConcepts(job.client, job.material, progress, options);
-        return detailMode === "eager" ? expandConceptDetails(job.client, concepts, job.material, progress, options) : concepts;
+        const concepts = await extractConcepts(graphClient, job.material, progress, options);
+        return detailMode === "eager" ? expandConceptDetails(graphClient, concepts, job.material, progress, options) : concepts;
       });
       job.concepts = job.detailedConcepts;
       if (job.mode === "conceptual") {
         job.status = "organizing_concepts";
-        job.concepts = await stage("organization", [job.material, job.detailedConcepts], () => organizeConcepts(job.client, job.material, job.detailedConcepts, progress, options));
+        job.concepts = await stage("organization", [job.material, job.detailedConcepts], () => organizeConcepts(graphClient, job.material, job.detailedConcepts, progress, options));
       }
       if (detailMode === "on-demand") {
         job.concepts = job.concepts.map((concept) => ({ ...concept, detailsState: "pending" }));
@@ -168,9 +170,9 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
       }
       job.status = "analyzing_relations";
       const relationOptions = { ...options, concurrency: options.relationConcurrency };
-      job.relations = await stage("relations", [job.material, job.concepts], () => analyzeRelations(job.client, job.material, job.concepts, progress, relationOptions));
+      job.relations = await stage("relations", [job.material, job.concepts], () => analyzeRelations(graphClient, job.material, job.concepts, progress, relationOptions));
       job.status = "localizing";
-      const localized = await measureAnalysisStage("localization", () => localizeResult(job.client, {
+      const localized = await measureAnalysisStage("localization", () => localizeResult(graphClient, {
         graph: { concepts: job.concepts, relations: job.relations },
         ...(job.mode === "conceptual" ? { detailedConcepts: job.detailedConcepts } : {}),
       }, { onProgress(event) {
@@ -214,7 +216,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
                 || (!changedIds.has(relation.source) && !changedIds.has(relation.target));
             });
             const relations = await stage('subject_relations', [combined.material, combined.concepts, combined.relations],
-              () => analyzeRelations(job.client, combined.material, combined.concepts, progress, { ...relationOptions, crossMaterial: true, changedMaterialId: job.id, existingRelations }));
+              () => analyzeRelations(graphClient, combined.material, combined.concepts, progress, { ...relationOptions, crossMaterial: true, changedMaterialId: job.id, existingRelations }));
             subject.crossRelations = relations.filter((relation) => {
               const source = combined.concepts.find((concept) => concept.id === relation.source);
               const target = combined.concepts.find((concept) => concept.id === relation.target);
@@ -224,7 +226,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
           }
           if (job.mode === 'conceptual') {
             try {
-              const groups = await measureAnalysisStage('canonicalization', () => inferEquivalentGroups(job.client, combined.concepts, combined.relations, options, progress), report);
+              const groups = await measureAnalysisStage('canonicalization', () => inferEquivalentGroups(graphClient, combined.concepts, combined.relations, options, progress), report);
               subject.conceptEquivalences = { signature: equivalenceSignature(combined.concepts, combined.relations), groups };
             } catch (error) {
               progress({ stage: 'organization', completed: 0, total: 1, warning: true,
@@ -316,7 +318,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
           const combined = combineSubject(subject, analyses);
           const options = analysisOptionsFromEnv(env);
           if (options.cacheEnabled) options.checkpoints = createCheckpoints({ directory: storagePath ? `${storagePath}.checkpoints` : undefined, scope: analysisCacheScope(env, {}) });
-          const client = clientFactory((event) => logAiEvent({ kind: 'canonicalization', ...event }));
+          const client = scopedAiClient(clientFactory((event) => logAiEvent({ kind: 'canonicalization', ...event })), 'graph', (state) => { subject.queueState = state; });
           const groups = await inferEquivalentGroups(client, combined.concepts, combined.relations, options);
           subject.conceptEquivalences = { signature: equivalenceSignature(combined.concepts, combined.relations), groups };
           await workspace.save();
@@ -332,7 +334,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         const progress = [...subject.progress.values()].map(learningProgress);
         const targetId = subject.path?.steps.at(-1)?.conceptId;
         const path = buildLearningPath(combined, progress, combined.concepts.some((concept) => concept.id === targetId) ? targetId : undefined);
-        send(response, 200, { id: subject.id, name: subject.name, graph: { concepts: combined.concepts, relations: combined.relations, equivalences: combined.equivalences, coreGroups: combined.coreGroups }, materials: combined.materials, progress, history: subject.history, path });
+        send(response, 200, { id: subject.id, name: subject.name, graph: { concepts: combined.concepts, relations: combined.relations, equivalences: combined.equivalences, coreGroups: combined.coreGroups }, materials: combined.materials, queueState: subject.queueState, progress, history: subject.history, path });
         return;
       }
       const materialMatch = /^\/api\/materials\/([a-f0-9-]+)(?:\/(file|analyze))?$/.exec(url.pathname);
@@ -406,6 +408,7 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
         job.events?.push({ kind: "request", ...event });
         if (subject && job.events.length > 200) job.events.splice(0, job.events.length - 200);
       });
+      const interactiveClient = scopedAiClient(job.client, "interactive", (state) => { (subject ?? job).queueState = state; });
       const input = await jsonBody(request);
       if (job.busy || subject?.busy) throw new HttpError(409, "Wait for the current operation to finish.");
       job.busy = true;
@@ -421,12 +424,12 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
           const submission = subject ? { id: randomUUID(), conceptId: concept.id, conceptName: concept.name, question: stored.question.question, answer, status: "PENDING", createdAt: new Date().toISOString() } : null;
           if (submission) { subject.history.push(submission); await workspace.save(); }
           let rawEvaluation;
-          try { rawEvaluation = await evaluateAnswer(job.client, stored.target ?? concept, job.material, stored.question, answer, { concepts: job.concepts, relations: job.relations }); }
+          try { rawEvaluation = await evaluateAnswer(interactiveClient, stored.target ?? concept, job.material, stored.question, answer, { concepts: job.concepts, relations: job.relations }); }
           catch (error) {
             if (submission) { submission.status = "FAILED"; submission.error = errorInfo(error); submission.feedback = "평가를 완료하지 못했습니다. 제출한 답안은 보관되며 이해도에는 반영하지 않았습니다."; await workspace.save(); }
             throw error;
           }
-          const { result: evaluation, report: localization } = await localizeResult(job.client, rawEvaluation, { validate: (value) => evaluationSchema.parse(value) });
+          const { result: evaluation, report: localization } = await localizeResult(interactiveClient, rawEvaluation, { validate: (value) => evaluationSchema.parse(value) });
           const history = job.progress.get(concept.id) ?? { conceptId: concept.id, scores: [], recentMistakes: [] };
           history.scores = [...history.scores, evaluation.score].slice(-100);
           if (stored.setId) {
@@ -446,8 +449,8 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
             const targets = questionTargets(concept, job.material);
             const setId = randomUUID();
             const generated = await mapBatches(targets, analysisOptionsFromEnv(env).concurrency, async (target) => {
-              const rawQuestion = await generateQuestion(job.client, target, job.material, input.type ?? "SHORT_ANSWER", input.difficulty ?? "MEDIUM");
-              const { result: question, report: localization } = await localizeResult(job.client, rawQuestion, { validate: validateQuestion });
+              const rawQuestion = await generateQuestion(interactiveClient, target, job.material, input.type ?? "SHORT_ANSWER", input.difficulty ?? "MEDIUM");
+              const { result: question, report: localization } = await localizeResult(interactiveClient, rawQuestion, { validate: validateQuestion });
               return { id: randomUUID(), target, question, localization };
             });
             for (const stored of job.questions.values()) if (stored.conceptId === concept.id) stored.superseded = true;
@@ -457,8 +460,8 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
               topic: entry.target.name, question: publicQuestion(entry.question), localization: { status: entry.localization.status, detected: entry.localization.detected, translated: entry.localization.translated, warning: entry.localization.warning } }));
             send(response, 200, { ...questions[0], setId, total: questions.length, questions });
           } else if (match[2] === "details") {
-            const [expanded] = await expandConceptDetails(job.client, [concept], job.material, undefined, analysisOptionsFromEnv(env));
-            const { result: localized, report: localization } = await localizeResult(job.client, expanded, {
+            const [expanded] = await expandConceptDetails(interactiveClient, [concept], job.material, undefined, analysisOptionsFromEnv(env));
+            const { result: localized, report: localization } = await localizeResult(interactiveClient, expanded, {
               validate: (value) => {
                 conceptCollectionSchema.parse({ concepts: [value] });
                 validateDetailedExplanations([value]);
@@ -474,8 +477,8 @@ export function createDemoServer({ env = process.env, storagePath, clientFactory
             await workspace.save();
             send(response, 200, { concept: localized, localization });
           } else {
-            const rawPath = await recommendPath(job.client, { concepts: job.concepts, relations: job.relations }, concept.id, [...job.progress.values()].map((history) => ({ conceptId: history.conceptId, scores: [learningProgress(history).score], recentMistakes: history.recentMistakes })));
-            const { result: path, report: localization } = await localizeResult(job.client, rawPath, { validate: (value) => recommendationSchema.parse(value) });
+            const rawPath = await recommendPath(interactiveClient, { concepts: job.concepts, relations: job.relations }, concept.id, [...job.progress.values()].map((history) => ({ conceptId: history.conceptId, scores: [learningProgress(history).score], recentMistakes: history.recentMistakes })));
+            const { result: path, report: localization } = await localizeResult(interactiveClient, rawPath, { validate: (value) => recommendationSchema.parse(value) });
             if (subject) subject.path = path;
             await workspace.save();
             send(response, 200, { path, localization });

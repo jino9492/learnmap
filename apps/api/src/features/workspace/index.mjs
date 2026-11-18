@@ -35,7 +35,7 @@ export function createWorkspace(storagePath) {
   void initialized.catch(() => { process.stderr.write("Could not load the local LearnMap workspace. Existing data was not overwritten.\n"); });
   function save() {
     if (!storagePath) return Promise.resolve();
-    const serialize = (item) => ({ ...item, ...(item.status === 'saving' ? { status: 'ready' } : {}), client: undefined, questions: [...item.questions], progress: [...item.progress] });
+    const serialize = (item) => ({ ...item, ...(item.status === 'saving' ? { status: 'ready' } : {}), client: undefined, queueState: undefined, questions: [...item.questions], progress: [...item.progress] });
     const data = JSON.stringify({ users: [...users.values()], sessions: [...sessions], analyses: [...analyses.values()].map(serialize), subjects: [...subjects.values()].map(serialize) });
     const next = pending.catch(() => undefined).then(async () => {
       await mkdir(dirname(storagePath), { recursive: true });

@@ -8,8 +8,9 @@ const messages = {
 export function createAiLoading() {
   let dialog;
   let status;
+  let description;
 
-  return async function withAiLoading(action, run) {
+  return async function withAiLoading(action, run, statusUrl) {
     if (!dialog) {
       dialog = document.createElement("dialog");
       dialog.className = "ai-loading";
@@ -22,16 +23,36 @@ export function createAiLoading() {
       status = document.createElement("h2");
       status.id = "ai-loading-title";
       status.tabIndex = -1;
-      const description = document.createElement("p");
+      description = document.createElement("p");
       description.id = "ai-loading-description";
       description.textContent = "AI가 처리 중입니다. 잠시만 기다려 주세요.";
       dialog.append(spinner, status, description);
       document.body.append(dialog);
     }
     status.textContent = messages[action] ?? "AI가 요청을 처리하고 있어요";
+    description.textContent = "AI가 처리 중입니다. 잠시만 기다려 주세요.";
+    let finished = false;
+    let timer;
+    const controller = new AbortController();
+    const poll = async () => {
+      try {
+        const response = await fetch(statusUrl, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return;
+        const state = await response.json();
+        if (!finished) {
+          const waiting = state.queueState?.waiting > 0 && state.queueState.active === 0;
+          status.textContent = waiting ? "대기 중" : messages[action] ?? "AI가 요청을 처리하고 있어요";
+          description.textContent = waiting
+            ? "사용량 상한 또는 다른 AI 작업으로 대기 중입니다. 실행 가능해지면 자동으로 시작합니다."
+            : "AI가 처리 중입니다. 잠시만 기다려 주세요.";
+        }
+      } catch { /* Keep the operation alive during a status polling failure. */ }
+      finally { if (!finished) timer = setTimeout(poll, 1500); }
+    };
+    if (statusUrl) timer = setTimeout(poll, 500);
     dialog.showModal();
     status.focus();
     try { return await run(); }
-    finally { dialog.close(); }
+    finally { finished = true; clearTimeout(timer); controller.abort(); dialog.close(); }
   };
 }

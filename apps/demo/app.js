@@ -47,6 +47,10 @@ function showAnalysisProgress(value, label) {
 }
 
 function renderAnalysisProgress(state) {
+  if (!['ready', 'failed'].includes(state.status) && state.queueState?.waiting > 0 && state.queueState.active === 0) {
+    showAnalysisProgress(element("analysis-progress").value || 0, "대기 중 · 다른 그래프의 AI 요청이 끝나면 계속합니다.");
+    return;
+  }
   if (state.status === "ready") { showAnalysisProgress(100, "분석 완료 (100%)"); return; }
   if (state.status === "linking_subject") { showAnalysisProgress(90, "다른 자료와 연결·검증 중"); return; }
   if (state.status === "saving") { showAnalysisProgress(99, "학습 지도 저장 중 (99%)"); return; }
@@ -151,7 +155,7 @@ async function perform(label, action) {
 }
 
 async function post(action, value) {
-  return withAiLoading(action, () => request(`/api/analyses/${analysisId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) }));
+  return withAiLoading(action, () => request(`/api/analyses/${analysisId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) }), `/api/analyses/${analysisId}`);
 }
 
 element("upload-form").addEventListener("submit", async (event) => {

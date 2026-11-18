@@ -151,13 +151,17 @@ export const Prerequisites = ({ conceptId }: { conceptId: string }) => {
   );
 };
 
-export const FeedbackBanners = () => {
+export const FeedbackBanners = ({ waiting = false }: { waiting?: boolean }) => {
   const operations = useOperations();
   return (
     <>
       {operations.message && (
         <div id="notice" className="notice" role="status">
-          <span>{operations.message}</span>
+          <span>
+            {operations.busy && waiting
+              ? `대기 중 · ${operations.message}`
+              : operations.message}
+          </span>
           {!operations.busy && (
             <button className="compact" onClick={() => operations.notify("")}>
               닫기
