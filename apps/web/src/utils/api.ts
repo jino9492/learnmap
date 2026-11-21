@@ -176,9 +176,10 @@ export const post = <T>(
   schema: z.ZodType<T>,
   data: unknown,
 ): Promise<T> => {
-  const run = () =>
+  const run = (signal?: AbortSignal) =>
     request(url, schema, {
       method: "POST",
+      signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
@@ -187,7 +188,7 @@ export const post = <T>(
       url,
     )?.[1];
   return action
-    ? withAiLoading(action, run, url.slice(0, url.lastIndexOf("/")))
+    ? withAiLoading(action, run, url.slice(0, url.lastIndexOf("/")) + "/queue")
     : run();
 };
 export const subjectKey = (id: string) => ["subject", id];

@@ -173,3 +173,17 @@ test('partial relation stages are not cached as complete results', async () => {
   await cache.run('key', produce, undefined, shouldCache);
   assert.equal(calls, 2);
 });
+
+test('429 during cross-file analysis preserves finished relations, but billing errors still fail', async () => {
+  const { concepts, material } = input(2);
+  const previous = {source:'a:0',target:'b:0',type:'RELATED',reason:'기존 검증 관계입니다.'};
+  const events = [];
+  const client = { async generate() { throw new AiError('PROVIDER','Temporary throttle','RATE_LIMIT'); } };
+  const options = {crossMaterial:true, changedMaterialId:'c',existingRelations:[previous]};
+  const result = await analyzeRelations(client,material,concepts,e=>events.push(e),options);
+  assert.ok(result.includes(previous));
+  assert.ok(events.some(e=>e.incomplete && e.warning && /AI 호출이 제한/.test(e.detail)));
+  await assert.rejects(analyzeRelations({async generate() {
+    throw new AiError('PROVIDER','Billing quota','QUOTA_EXHAUSTED');
+  }},material,concepts,undefined,options),{reason:'QUOTA_EXHAUSTED'});
+});

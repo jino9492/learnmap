@@ -332,6 +332,7 @@ export async function analyzeCrossMaterialRelations(
   );
   const deadline = Date.now() + 270_000;
   let limited = false;
+  let rateLimited = false;
   let screeningCompleted = 0;
   const relevance = new Map<string, number>();
   const lexical = retrievalScores(plan.nodes, plan.pairs);
@@ -455,11 +456,12 @@ export async function analyzeCrossMaterialRelations(
         (_entries, error) => {
           if (
             !(error instanceof AiError) ||
-            error.code !== "TIMEOUT" ||
-            Date.now() < deadline
+            (error.reason !== "RATE_LIMIT" &&
+              (error.code !== "TIMEOUT" || Date.now() < deadline))
           )
             throw error;
           limited = true;
+          rateLimited ||= error.reason === "RATE_LIMIT";
           return [];
         },
       ))
@@ -591,11 +593,12 @@ export async function analyzeCrossMaterialRelations(
         (_entries, error) => {
           if (
             !(error instanceof AiError) ||
-            error.code !== "TIMEOUT" ||
-            Date.now() < deadline
+            (error.reason !== "RATE_LIMIT" &&
+              (error.code !== "TIMEOUT" || Date.now() < deadline))
           )
             throw error;
           limited = true;
+          rateLimited ||= error.reason === "RATE_LIMIT";
           return [];
         },
       );
@@ -625,8 +628,9 @@ export async function analyzeCrossMaterialRelations(
       total: batches.length,
       warning: true,
       incomplete: true,
-      detail:
-        "파일 간 관계 분석의 요청·시간 예산에 도달했습니다. 검증된 관계만 저장했으며 일부 비교는 완료하지 못했습니다.",
+      detail: rateLimited
+        ? "AI 호출이 제한되어 일부 파일 간 비교를 완료하지 못했습니다. 검증된 관계는 저장했습니다."
+        : "파일 간 관계 분석의 요청·시간 예산에 도달했습니다. 검증된 관계만 저장했으며 일부 비교는 완료하지 못했습니다.",
     });
   onProgress?.({
     stage: "relations",

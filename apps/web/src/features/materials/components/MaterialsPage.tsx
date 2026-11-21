@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MIB } from "../../../../../shared/upload-limit.ts";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -175,11 +176,11 @@ export const UploadDialog = ({ onClose }: { onClose: () => void }) => {
       (file) =>
         !/\.(pdf|txt|md)$/i.test(file.name) ||
         !file.size ||
-        file.size > 20 * 1024 * 1024,
+        file.size > MAX_UPLOAD_BYTES,
     );
     if (invalid) {
       setError(
-        `${invalid.name}: 비어 있지 않은 PDF, TXT, Markdown 파일을 선택해 주세요. 파일당 최대 20 MiB입니다.`,
+        `${invalid.name}: 비어 있지 않은 PDF, TXT, Markdown 파일을 선택해 주세요. 파일당 최대 ${MAX_UPLOAD_MIB} MiB입니다.`,
       );
       return;
     }
@@ -246,11 +247,11 @@ export const UploadDialog = ({ onClose }: { onClose: () => void }) => {
             (file) =>
               !/\.(pdf|txt|md)$/i.test(file.name) ||
               !file.size ||
-              file.size > 20 * 1024 * 1024,
+              file.size > MAX_UPLOAD_BYTES,
           );
           if (invalid) {
             setError(
-              `${invalid.name}: 비어 있지 않은 PDF, TXT, Markdown 파일을 선택해 주세요. 파일당 최대 20 MiB입니다.`,
+              `${invalid.name}: 비어 있지 않은 PDF, TXT, Markdown 파일을 선택해 주세요. 파일당 최대 ${MAX_UPLOAD_MIB} MiB입니다.`,
             );
             return;
           }
@@ -322,7 +323,7 @@ export const UploadDialog = ({ onClose }: { onClose: () => void }) => {
                 : "여러 파일을 놓거나 클릭하여 선택하세요"}
             </strong>
             <small>
-              PDF · TXT · Markdown / 여러 파일 선택 가능 · 파일당 최대 20 MiB
+              PDF · TXT · Markdown / 여러 파일 선택 가능 · 파일당 최대 {MAX_UPLOAD_MIB} MiB
             </small>
             <input
               type="file"

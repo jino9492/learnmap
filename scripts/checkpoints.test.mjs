@@ -271,7 +271,7 @@ test("cloud relation concurrency defaults to four, honors overrides and keeps Ol
     }).relationConcurrency,
     4,
   );
-  for (const value of ["0", "5", "NaN"])
+  for (const value of ["0", "33", "NaN"])
     assert.throws(() =>
       analysisOptionsFromEnv({ AI_RELATION_CONCURRENCY: value }),
     );

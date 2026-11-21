@@ -47,6 +47,23 @@ test("interactive loading dialog shows queue wait and resumes automatically", as
   await expect(page.locator("dialog.ai-loading")).not.toBeVisible();
 });
 
+test("a learner can cancel a queued operation from the dialog", async ({ page }) => {
+  await page.route("**/api/analyses/test/queue", route => route.fulfill({ json: { queueState: { waiting: 1, active: 0 } } }));
+  await page.goto("/");
+  await page.evaluate(async () => {
+    const path = "/loading.js";
+    const { createAiLoading } = await import(path);
+    void createAiLoading()("questions", (signal: AbortSignal) => new Promise<void>((_, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+    }), "/api/analyses/test/queue").catch((error: Error) => {
+      document.body.dataset.cancelResult = error.message;
+    });
+  });
+  await page.getByRole("button", {name: "대기 취소"}).click();
+  await expect(page.locator("dialog.ai-loading")).not.toBeVisible();
+  await expect(page.locator("body")).toHaveAttribute("data-cancel-result", "AI 작업을 취소했습니다.");
+});
+
 test("an already-running server without the progress field uses its live analysis log", async ({
   page,
 }) => {

@@ -4,6 +4,7 @@ import { createGeminiClient } from "./gemini-client.ts";
 import { createOllamaClient } from "./ollama-client.ts";
 import { AiError, ensure } from "./errors.ts";
 import type { TransportOptions } from "./http.ts";
+import { measuredCloudProfile } from "./queue.ts";
 import { validateConcurrency } from "./batches.ts";
 import type { BatchOptions } from "./batches.ts";
 
@@ -16,9 +17,9 @@ interface AnalysisOptions extends BatchOptions {
 export function analysisOptionsFromEnv(env: Record<string, string | undefined>): AnalysisOptions {
   const provider = env.AI_PROVIDER?.trim().toLowerCase() || "openai";
   const concurrencyValue = env.AI_CONCURRENCY?.trim();
-  const concurrency = validateConcurrency(concurrencyValue ? Number(concurrencyValue) : provider === "ollama" ? 1 : 2);
+  const concurrency = validateConcurrency(concurrencyValue ? Number(concurrencyValue) : provider === "ollama" ? 1 : measuredCloudProfile(env) ? 8 : 2);
   const relationValue = env.AI_RELATION_CONCURRENCY?.trim();
-  const relationConcurrency = validateConcurrency(relationValue ? Number(relationValue) : concurrencyValue ? concurrency : provider === "ollama" ? 1 : 4);
+  const relationConcurrency = validateConcurrency(relationValue ? Number(relationValue) : concurrencyValue ? concurrency : provider === "ollama" ? 1 : measuredCloudProfile(env) ? 16 : 4);
   const batchValue = env.AI_BATCH_CHARACTERS?.trim();
   const batchCharacters = batchValue ? Number(batchValue) : 6000;
   ensure(Number.isInteger(batchCharacters) && batchCharacters >= 1000 && batchCharacters <= 12000, "AI_BATCH_CHARACTERS must be an integer from 1000 to 12000.", "CONFIG");
@@ -38,7 +39,7 @@ export function createConfiguredClient(env: Record<string, string | undefined>, 
   switch (provider) {
     case "openai": {
       const shared = { ...transport, apiKey: env.OPENAI_API_KEY?.trim() ?? "" };
-      const graph = createOpenAiClient({ ...shared, model: env.OPENAI_MODEL?.trim() ?? "" });
+      const graph = createOpenAiClient({ ...shared, tuneGraphRelations: measuredCloudProfile(env), model: env.OPENAI_MODEL?.trim() ?? "" });
       const fastModel = env.OPENAI_FAST_MODEL?.trim();
       return fastModel ? routeTaskClients(graph, createOpenAiClient({ ...shared, model: fastModel })) : graph;
     }

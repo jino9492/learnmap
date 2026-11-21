@@ -1,8 +1,8 @@
-export type ErrorCode = "INPUT" | "OCR_REQUIRED" | "CONFIG" | "CONNECTION" | "TIMEOUT" | "PROVIDER" | "FORMAT" | "SEMANTIC" | "REFUSAL";
+export type ErrorCode = "INPUT" | "OCR_REQUIRED" | "CANCELLED" | "CONFIG" | "CONNECTION" | "TIMEOUT" | "PROVIDER" | "FORMAT" | "SEMANTIC" | "REFUSAL";
 
 export class AiError extends Error {
   readonly code: ErrorCode;
-  readonly reason?: "CONTEXT_LIMIT" | "RATE_LIMIT" | "AUTH" | "MODEL_NOT_FOUND" | "UNAVAILABLE";
+  readonly reason?: "CONTEXT_LIMIT" | "RATE_LIMIT" | "QUOTA_EXHAUSTED" | "AUTH" | "MODEL_NOT_FOUND" | "UNAVAILABLE" | "QUEUE_FULL";
   constructor(code: ErrorCode, message: string, reason?: AiError["reason"]) {
     super(message);
     this.name = "AiError";

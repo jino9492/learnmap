@@ -1,3 +1,4 @@
+import { scopedAiClient } from "./ai/core/queue.ts";
 import { expandConceptDetails } from "./ai/concept-extraction/details.ts";
 import { logAiEvent } from "./ai/core/logging.ts";
 import { validateDetailedExplanations } from "./ai/concept-extraction/quality.ts";
@@ -60,6 +61,8 @@ async function main() {
       onEvent(event) { stderr.write(`${JSON.stringify(event)}\n`); },
     });
   }
+  const baseClient = client;
+  client = scopedAiClient(baseClient, "graph");
   stderr.write("Extracting concepts...\n");
   const reportProgress = ({ stage, completed, total, detail }) => {
     logAiEvent({ kind: "progress", stage, completed, total, detail });
@@ -82,6 +85,7 @@ async function main() {
   const { concepts, relations } = localized.result;
   reportTiming({ kind: "timing", stage: "analysis", outcome: "completed", elapsedMs: Math.round((performance.now() - analysisStartedAt) * 100) / 100 });
   stdout.write(`${JSON.stringify({ ...localized.result, localization: localized.report }, null, 2)}\n`);
+  client = scopedAiClient(baseClient, "interactive");
   const terminal = createInterface({ input: stdin, output: stdout });
   try {
     const conceptId = isDemo ? "c3" : (await terminal.question("Concept ID to practice: ")).trim();

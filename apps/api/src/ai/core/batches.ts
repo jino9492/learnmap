@@ -8,7 +8,7 @@ export interface BatchOptions {
 }
 
 export function validateConcurrency(value = 1): number {
-  ensure(Number.isInteger(value) && value >= 1 && value <= 4, "AI_CONCURRENCY must be an integer from 1 to 4.", "CONFIG");
+  ensure(Number.isInteger(value) && value >= 1 && value <= 32, "AI_CONCURRENCY must be an integer from 1 to 32.", "CONFIG");
   return value;
 }
 

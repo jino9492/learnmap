@@ -155,14 +155,14 @@ async function perform(label, action) {
 }
 
 async function post(action, value) {
-  return withAiLoading(action, () => request(`/api/analyses/${analysisId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) }), `/api/analyses/${analysisId}`);
+  return withAiLoading(action, (signal) => request(`/api/analyses/${analysisId}/${action}`, { signal, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) }), `/api/analyses/${analysisId}/queue`);
 }
 
 element("upload-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const file = element("pdf-file").files[0];
   if (!file) return;
-  if (file.size > 20 * 1024 * 1024) { element("error").textContent = "PDF 파일은 최대 20 MiB까지 지원합니다."; return; }
+  if (file.size > 11 * 1024 * 1024) { element("error").textContent = "PDF 파일은 최대 11 MiB까지 지원합니다."; return; }
   busy = true;
   analyzing = true;
   serverBusy = false;
