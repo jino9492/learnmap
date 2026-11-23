@@ -287,7 +287,7 @@ export function createDemoServer({ env = process.env, storagePath, parallelDemo 
       if (request.headers.origin && request.headers.origin !== (publicOrigin ?? `http://${request.headers.host}`)) throw new HttpError(403, "Cross-origin requests are not allowed.");
       const url = new URL(request.url, `http://${request.headers.host}`);
       if (experiment && url.pathname === "/") { response.writeHead(302, { Location: "/parallel" }); response.end(); return; }
-      const compiled = request.method === 'GET' ? await webAsset(url.pathname) : null;
+      const compiled = request.method === 'GET' ? await webAsset(url.pathname, publicOrigin ?? `http://${request.headers.host}`) : null;
       if (compiled) {
         response.writeHead(200, {
           'Content-Type': compiled.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',

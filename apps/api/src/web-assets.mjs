@@ -10,7 +10,7 @@ const contentTypes = {
 };
 
 // Serve only the compiled UI and its public assets, never arbitrary workspace files.
-export async function webAsset(pathname) {
+export async function webAsset(pathname, origin) {
   const isPage =
     pathname === "/" ||
     (!/^\/(api|demo)(\/|$)/.test(pathname) && !pathname.includes("."));
@@ -26,13 +26,16 @@ export async function webAsset(pathname) {
         ? { content: `import ${JSON.stringify(entry)};`, type: contentTypes.js }
         : null;
     }
+    if (isPage) {
+      const html = await readFile(new URL("index.html", root), "utf8");
+      return {
+        content: html.replace('content="/assets/learnmap-share.png"', `content="${origin}/assets/learnmap-share.png"`),
+        type: "text/html; charset=utf-8",
+      };
+    }
     return {
-      content: await readFile(
-        new URL(isPage ? "index.html" : pathname.slice(1), root),
-      ),
-      type: isPage
-        ? "text/html; charset=utf-8"
-        : contentTypes[pathname.split(".").at(-1)],
+      content: await readFile(new URL(pathname.slice(1), root)),
+      type: contentTypes[pathname.split(".").at(-1)],
     };
   } catch (error) {
     if (error.code === "ENOENT") return null;
