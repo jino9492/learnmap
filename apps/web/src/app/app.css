@@ -16,6 +16,23 @@ main:focus {
 #upload-controls:disabled .drop-zone {
   cursor: not-allowed;
 }
+.upload-file-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.upload-file-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.upload-file-list .icon-button {
+  flex-shrink: 0;
+}
 .analysis-materials {
   grid-column: 1 / -1;
   list-style: none;

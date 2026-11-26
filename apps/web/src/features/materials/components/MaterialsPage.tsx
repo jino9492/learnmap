@@ -335,11 +335,31 @@ export const UploadDialog = ({ onClose }: { onClose: () => void }) => {
               }}
             />
           </label>
-          <p id="file-name" className="muted" aria-live="polite">
-            {files.length
-              ? `${files.length}개 선택 · ${files.map((file) => file.name).join(", ")}`
-              : ""}
+          <p id="file-name" className="muted" role="status">
+            {`${files.length}개 선택`}
           </p>
+          {files.length > 0 && (
+            <ul className="upload-file-list" aria-label="선택한 파일">
+              {files.map((file) => (
+                <li key={`${file.name}:${file.size}:${file.lastModified}`}>
+                  <span>{file.name}</span>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`${file.name} 제거`}
+                    onClick={() => {
+                      setFiles((previous) =>
+                        previous.filter((item) => item !== file),
+                      );
+                      setError("");
+                    }}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <label>
             개념 정리 방식
             <select

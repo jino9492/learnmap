@@ -171,11 +171,12 @@ for (const view of ["graph", "materials"]) {
       .getByRole("heading")
       .dispatchEvent("drop", { dataTransfer: transfer });
     await expect(dialog.locator(".drop-zone")).not.toHaveClass(/dragging/);
-    await expect(dialog.locator("#file-name")).toContainText(
-      "1개 선택 · dropped.txt",
-    );
+    const fileCount = dialog.getByRole("status");
+    const droppedFile = dialog.getByRole("button", { name: "dropped.txt 제거" });
+    await expect(fileCount).toHaveText("1개 선택");
+    await expect(droppedFile).toBeVisible();
     await dialog.dispatchEvent("drop", { dataTransfer: transfer });
-    await expect(dialog.locator("#file-name")).toContainText("1개 선택");
+    await expect(fileCount).toHaveText("1개 선택");
     await dialog
       .locator("input[type=file]")
       .setInputFiles({
@@ -183,7 +184,7 @@ for (const view of ["graph", "materials"]) {
         mimeType: "text/markdown",
         buffer: Buffer.from("추가 자료"),
       });
-    await expect(dialog.locator("#file-name")).toContainText("2개 선택");
+    await expect(fileCount).toHaveText("2개 선택");
     const invalid = await page.evaluateHandle(() => {
       const data = new DataTransfer();
       data.items.add(new File(["invalid"], "slides.pptx"));
@@ -191,10 +192,14 @@ for (const view of ["graph", "materials"]) {
     });
     await dialog.dispatchEvent("drop", { dataTransfer: invalid });
     await expect(dialog.getByRole("alert")).toContainText("PDF, TXT, Markdown");
-    await expect(dialog.locator("#file-name")).toContainText("2개 선택");
+    await expect(fileCount).toHaveText("2개 선택");
+    await droppedFile.click();
+    await expect(droppedFile).toHaveCount(0);
+    await expect(fileCount).toHaveText("1개 선택");
+    expect(uploads).toEqual([]);
     await dialog.getByRole("button", { name: "자료 추가 및 분석" }).click();
     await expect(dialog).not.toBeVisible();
-    expect(uploads).toEqual(["dropped.txt", "extra.md"]);
+    expect(uploads).toEqual(["extra.md"]);
     await transfer.dispose();
     await invalid.dispose();
   });
