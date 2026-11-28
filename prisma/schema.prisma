@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client"
+  output = "../apps/api/generated/prisma"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model User {
+  id           String      @id @db.Char(36)
+  email        String      @unique @db.VarChar(254)
+  salt         String      @db.Char(32)
+  passwordHash String      @db.Char(128)
+  createdAt    DateTime
+  sessions     Session[]
+  workspaces   Workspace[]
+}
+
+model Session {
+  id        String   @id @db.Char(64)
+  userId    String   @db.Char(36)
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Workspace {
+  id        String     @id @db.Char(36)
+  userId    String?    @db.Char(36)
+  guestHash String?    @db.Char(64)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  subjects  Subject[]
+  analyses  Analysis[]
+
+  @@index([userId])
+  @@index([guestHash])
+}
+
+model Subject {
+  id          String    @id @db.Char(36)
+  workspaceId String    @db.Char(36)
+  name        String
+  payload     Json
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  analyses    Analysis[]
+
+  @@unique([id, workspaceId])
+  @@index([workspaceId])
+}
+
+model Analysis {
+  id          String     @id @db.Char(36)
+  workspaceId String    @db.Char(36)
+  subjectId   String?    @db.Char(36)
+  filename    String     @db.Text
+  status      String
+  original    Bytes?     @db.LongBlob
+  payload     Json
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id])
+  subject     Subject?   @relation(fields: [subjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+
+  @@index([workspaceId])
+  @@index([subjectId])
+}
+
+model StoreRevision {
+  id      Int @id
+  version Int
+}

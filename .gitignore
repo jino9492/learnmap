@@ -13,3 +13,4 @@ AGENT.md
 apps/web/dist/
 playwright-report/
 test-results/
+/apps/api/generated/

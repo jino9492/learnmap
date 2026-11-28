@@ -67,8 +67,15 @@ function send(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-export function createDemoServer({ env = process.env, storagePath, parallelDemo = false, clientFactory = (onEvent) => createConfiguredClient(env, { onEvent }) } = {}) {
-  const workspace = createWorkspace(storagePath);
+export function createDemoServer(options) {
+  return createServer(createLearnMapHandler(options));
+}
+
+export function createLearnMapHandler({
+  env = process.env, storagePath, workspace = createWorkspace(storagePath),
+  serveWeb = true, parallelDemo = false,
+  clientFactory = (onEvent) => createConfiguredClient(env, { onEvent }),
+} = {}) {
   const { analyses, subjects } = workspace;
   const publicOrigin = env.APP_ORIGIN ? new URL(env.APP_ORIGIN).origin : null;
   const accounts = createAccounts(workspace, { secure: publicOrigin?.startsWith('https:'), allowLegacyImport: !publicOrigin });
@@ -279,15 +286,16 @@ export function createDemoServer({ env = process.env, storagePath, parallelDemo 
     if (job.status === 'saving') job.status = 'ready';
   }
 
-  return createServer(async (request, response) => {
+  return async (request, response, clientAddress) => {
     try {
       await workspace.initialized;
+      if (workspace.assertAvailable) await workspace.assertAvailable();
       const allowedHosts = [`127.0.0.1:${request.socket.localPort}`, `localhost:${request.socket.localPort}`];
       if (!allowedHosts.includes(request.headers.host) && (!publicOrigin || request.headers.host !== new URL(publicOrigin).host)) throw new HttpError(403, "Local demo requests only.");
       if (request.headers.origin && request.headers.origin !== (publicOrigin ?? `http://${request.headers.host}`)) throw new HttpError(403, "Cross-origin requests are not allowed.");
       const url = new URL(request.url, `http://${request.headers.host}`);
       if (experiment && url.pathname === "/") { response.writeHead(302, { Location: "/parallel" }); response.end(); return; }
-      const compiled = request.method === 'GET' ? await webAsset(url.pathname, publicOrigin ?? `http://${request.headers.host}`) : null;
+      const compiled = serveWeb && request.method === 'GET' ? await webAsset(url.pathname, publicOrigin ?? `http://${request.headers.host}`) : null;
       if (compiled) {
         response.writeHead(200, {
           'Content-Type': compiled.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
@@ -297,7 +305,7 @@ export function createDemoServer({ env = process.env, storagePath, parallelDemo 
         return;
       }
       const asset = assets.get(url.pathname);
-      if (request.method === "GET" && asset) {
+      if (serveWeb && request.method === "GET" && asset) {
         const content = await readFile(asset.url);
         response.writeHead(200, {
           "Content-Type": asset.type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -334,7 +342,7 @@ export function createDemoServer({ env = process.env, storagePath, parallelDemo 
         throw new HttpError(404, "실험 서버에서 제공하지 않는 기능입니다.");
       if (url.pathname === '/api/account' || url.pathname.startsWith('/api/account/')) {
         const input = request.method === 'POST' ? await jsonBody(request) : {};
-        send(response, 200, await accounts.handle(url.pathname, request, response, identity, input));
+        send(response, 200, await accounts.handle(url.pathname, request, response, identity, input, clientAddress));
         return;
       }
       if (request.method === "GET" && url.pathname === "/api/workspace") {
@@ -437,6 +445,10 @@ export function createDemoServer({ env = process.env, storagePath, parallelDemo 
         try {
           const bytes = await body(request, MAX_UPLOAD_BYTES);
           if (!bytes.length) throw new HttpError(400, "The PDF file is empty.");
+          // A login in another tab may claim the subject while the bytes arrive.
+          // Recheck before writing so an old guest request cannot append to it.
+          if (subjectId && !owns(subjects.get(subjectId))) throw new HttpError(404, "과목을 찾을 수 없습니다.");
+          if (subjectId && subjects.get(subjectId).busy) throw new HttpError(409, "학습 작업이 끝난 후 자료를 추가해 주세요.");
           const job = { id: randomUUID(), ownerId: identity.ownerId, subjectId, filename: name, bytes: bytes.toString("base64"), mode, status: "queued", busy: false, events: [], error: null, questions: new Map(), progress: new Map() };
           analyses.set(job.id, job);
           try { await workspace.save(); }
@@ -467,6 +479,7 @@ export function createDemoServer({ env = process.env, storagePath, parallelDemo 
         if (subject && job.events.length > 200) job.events.splice(0, job.events.length - 200);
       });
       const input = await jsonBody(request);
+      if (!owns(subject ?? job)) throw new HttpError(404, "Analysis not found.");
       if (job.busy || subject?.busy) throw new HttpError(409, "Wait for the current operation to finish.");
       const controller = new AbortController();
       const disconnected = () => { if (!response.writableEnded) controller.abort(); };
@@ -558,7 +571,7 @@ export function createDemoServer({ env = process.env, storagePath, parallelDemo 
       if (!response.headersSent) send(response, status, { error: errorInfo(error) });
       else response.end();
     }
-  });
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

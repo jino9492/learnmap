@@ -1,0 +1,29 @@
+# Install on the frontend host. Replace the example hostnames and certificate paths.
+server {
+    listen 443 ssl;
+    server_name learnmap.example.com;
+    ssl_certificate /etc/ssl/learnmap/fullchain.pem;
+    ssl_certificate_key /etc/ssl/learnmap/privkey.pem;
+
+    root /srv/learnmap/web;
+    index index.html;
+
+    location ^~ /api/ {
+        client_max_body_size 21m;
+        proxy_read_timeout 300s;
+
+        # Backend VM over a private network. Preserve the browser-facing host.
+        proxy_pass http://learnmap-api.internal:8787;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    location /assets/ {
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

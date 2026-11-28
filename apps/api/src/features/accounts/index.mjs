@@ -28,7 +28,7 @@ export function createAccounts(workspace, { secure = false, allowLegacyImport = 
     const user = session?.expiresAt > Date.now() ? workspace.users.get(session.userId) : null;
     return { guestId, ownerId: user?.id ?? guestId, user, sessionKey };
   }
-  async function handle(path, request, response, identity, input) {
+  async function handle(path, request, response, identity, input, clientAddress = request.socket.remoteAddress) {
     if (path === '/api/account' && request.method === 'GET') return { user: publicUser(identity.user), legacySubjects: allowLegacyImport && !identity.user ? [...workspace.subjects.values()].filter((item) => !item.ownerId).length : 0 };
     if (request.method !== 'POST') throw failure(405, '지원하지 않는 요청입니다.');
     if (!['/api/account/register', '/api/account/login', '/api/account/logout', '/api/account/restore'].includes(path)) throw failure(404, '계정 기능을 찾을 수 없습니다.');
@@ -60,7 +60,7 @@ export function createAccounts(workspace, { secure = false, allowLegacyImport = 
       const password = input.password;
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw failure(400, '올바른 이메일을 입력해 주세요.');
       if (typeof password !== 'string' || password.length < 10 || password.length > 128) throw failure(400, '비밀번호는 10~128자로 입력해 주세요.');
-      const address = request.socket.remoteAddress;
+      const address = clientAddress;
       const now = Date.now();
       for (const [key, value] of attempts) if (value.until <= now) attempts.delete(key);
       const attempt = attempts.get(address) ?? { count: 0, until: now + 15 * 60 * 1000 };

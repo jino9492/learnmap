@@ -6,17 +6,20 @@ import { analysisProgress } from '../material-analysis/progress.mjs';
 import { equivalentGroups, equivalenceSignature } from '../../ai/concept-organization/equivalence.ts';
 import { representativeConceptGroups } from '../knowledge-graph/core-groups.ts';
 
-export function createWorkspace(storagePath) {
+export function createWorkspace(storagePath, persistence) {
   const analyses = new Map();
   const subjects = new Map();
   const users = new Map();
   const sessions = new Map();
   let pending = Promise.resolve();
   const initialized = (async () => {
-    if (!storagePath) return;
     let data;
-    try { data = JSON.parse(await readFile(storagePath, "utf8")); }
-    catch (error) { if (error.code === "ENOENT") return; throw error; }
+    if (persistence) data = await persistence.load();
+    else if (storagePath) {
+      try { data = JSON.parse(await readFile(storagePath, "utf8")); }
+      catch (error) { if (error.code === "ENOENT") return; throw error; }
+    }
+    if (!data) return;
     for (const item of data.users ?? []) users.set(item.id, item);
     for (const [key, value] of data.sessions ?? []) sessions.set(key, value);
     for (const item of data.analyses ?? []) {
@@ -34,10 +37,11 @@ export function createWorkspace(storagePath) {
   })();
   void initialized.catch(() => { process.stderr.write("Could not load the local LearnMap workspace. Existing data was not overwritten.\n"); });
   function save() {
-    if (!storagePath) return Promise.resolve();
+    if (!storagePath && !persistence) return Promise.resolve();
     const serialize = (item) => ({ ...item, ...(item.status === 'saving' ? { status: 'ready' } : {}), client: undefined, queueState: undefined, questions: [...item.questions], progress: [...item.progress] });
     const data = JSON.stringify({ users: [...users.values()], sessions: [...sessions], analyses: [...analyses.values()].map(serialize), subjects: [...subjects.values()].map(serialize) });
     const next = pending.catch(() => undefined).then(async () => {
+      if (persistence) return persistence.save(JSON.parse(data));
       await mkdir(dirname(storagePath), { recursive: true });
       await writeFile(`${storagePath}.tmp`, data, { mode: 0o600 });
       await rename(`${storagePath}.tmp`, storagePath);
@@ -45,7 +49,7 @@ export function createWorkspace(storagePath) {
     pending = next;
     return next;
   }
-  return { analyses, subjects, users, sessions, initialized, save };
+  return { analyses, subjects, users, sessions, initialized, save, assertAvailable: persistence ? async () => { await pending; persistence.assertAvailable(); } : undefined };
 }
 
 export function conceptContentKey(concept) {
