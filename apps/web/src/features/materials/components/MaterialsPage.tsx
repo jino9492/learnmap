@@ -30,12 +30,28 @@ const materialLabels: Record<string, string> = {
   ready: "분석 완료",
   failed: "분석 실패",
 };
+
+const getMaterialState = (material: Material) => {
+  if (material.status === "failed" || material.error) return "failed";
+  if (material.status === "ready") return "ready";
+  return "active";
+};
+
 export const MaterialsPage = () => {
   const subject = useSubject();
   const operations = useOperations();
   const refresh = useRefreshSubject();
   const [upload, setUpload] = useState(false);
   const [removing, setRemoving] = useState<Material | null>(null);
+  const [filenameQuery, setFilenameQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const query = filenameQuery.trim().normalize().toLowerCase();
+  const visibleMaterials = subject.materials.filter(
+    (material) =>
+      material.title.normalize().toLowerCase().includes(query) &&
+      (statusFilter === "all" || getMaterialState(material) === statusFilter),
+  );
+
   return (
     <section className="page-view">
       <div className="page-heading">
@@ -45,8 +61,32 @@ export const MaterialsPage = () => {
           자료 추가
         </button>
       </div>
+      {subject.materials.length > 0 && (
+        <div className="material-filters">
+          <label>
+            파일명 검색
+            <input
+              type="search"
+              value={filenameQuery}
+              onChange={(event) => setFilenameQuery(event.target.value)}
+            />
+          </label>
+          <label>
+            분석 상태
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">전체</option>
+              <option value="active">대기 및 진행 중</option>
+              <option value="ready">{materialLabels.ready}</option>
+              <option value="failed">{materialLabels.failed}</option>
+            </select>
+          </label>
+        </div>
+      )}
       <div className="history-list">
-        {subject.materials.map((material) => (
+        {visibleMaterials.map((material) => (
           <article className="panel history-card" key={material.id}>
             <h2>
               <a
@@ -58,9 +98,11 @@ export const MaterialsPage = () => {
               </a>
             </h2>
             <p role="status">
-              {material.analysisProgress?.waiting
-                ? material.analysisProgress.label
-                : (materialLabels[material.status] ?? material.status)}
+              {getMaterialState(material) === "failed"
+                ? materialLabels.failed
+                : material.analysisProgress?.waiting
+                  ? material.analysisProgress.label
+                  : (materialLabels[material.status] ?? material.status)}
             </p>
             {Boolean(material.error) && (
               <p className="red" role="alert">
@@ -110,6 +152,19 @@ export const MaterialsPage = () => {
       {!subject.materials.length && (
         <Empty title="추가한 학습 자료가 없습니다">
           <p>PDF, TXT, Markdown 자료를 추가해 보세요.</p>
+        </Empty>
+      )}
+      {subject.materials.length > 0 && visibleMaterials.length === 0 && (
+        <Empty title="조건에 맞는 학습 자료가 없습니다">
+          <button
+            className="secondary"
+            onClick={() => {
+              setFilenameQuery("");
+              setStatusFilter("all");
+            }}
+          >
+            검색 및 필터 초기화
+          </button>
         </Empty>
       )}
       {upload && <UploadDialog onClose={() => setUpload(false)} />}
